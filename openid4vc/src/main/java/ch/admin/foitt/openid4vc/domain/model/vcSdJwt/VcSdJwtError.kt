@@ -12,6 +12,7 @@ interface VcSdJwtError {
         VerifyVcSdJwtSignatureError,
         ResolvePublicKeyError
     data object IssuerValidationFailed :
+        FetchJwtVcIssuerMetadataError,
         VerifyRequestObjectSignatureError,
         VerifyJwtError,
         VerifyVcSdJwtSignatureError,
@@ -30,6 +31,7 @@ interface VcSdJwtError {
         ResolvePublicKeyError
 
     data object NetworkError :
+        FetchJwtVcIssuerMetadataError,
         VerifyRequestObjectSignatureError,
         VerifyJwtError,
         VerifyVcSdJwtSignatureError,
@@ -40,6 +42,7 @@ interface VcSdJwtError {
     data class InvalidVcSdJwt(val cause: Throwable) : VerifyVcSdJwtSignatureError
 
     data class Unexpected(val cause: Throwable?) :
+        FetchJwtVcIssuerMetadataError,
         VerifyRequestObjectSignatureError,
         VerifyJwtError,
         VerifyVcSdJwtSignatureError,
@@ -49,6 +52,7 @@ interface VcSdJwtError {
 sealed interface VerifyRequestObjectSignatureError
 sealed interface VerifyJwtError
 sealed interface VerifyVcSdJwtSignatureError
+sealed interface FetchJwtVcIssuerMetadataError
 sealed interface ResolvePublicKeyError
 
 internal fun VerifyJwtSignatureError.toVerifyRequestObjectSignatureError(): VerifyRequestObjectSignatureError = when (this) {

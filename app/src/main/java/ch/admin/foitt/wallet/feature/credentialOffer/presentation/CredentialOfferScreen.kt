@@ -66,6 +66,7 @@ import ch.admin.foitt.wallet.platform.preview.AllLargeScreensPreview
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.utils.TestTags
+import ch.admin.foitt.wallet.platform.veranaTrust.presentation.VeranaTrustCard
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletTexts
 import ch.admin.foitt.wallet.theme.WalletTheme
@@ -120,24 +121,30 @@ fun CredentialOfferScreen(
 
     CredentialOfferScreenContent(
         isLoading = viewModel.isLoading.collectAsStateWithLifecycle().value,
+        isVeranaTrustLoading = viewModel.isVeranaTrustLoading.collectAsStateWithLifecycle().value,
         credentialOfferUiState = viewModel.credentialOfferUiState.stateFlow.collectAsStateWithLifecycle().value,
         announcementAxMessage = announcementAxMessage,
         onBadge = viewModel::onBadge,
         onAccept = viewModel::onAcceptClicked,
         onDecline = viewModel::onDeclineClicked,
         onWrongData = viewModel::onReportWrongDataClicked,
+        onVeranaTrustDetails = viewModel::onVeranaTrustDetails,
+        onRetryVeranaTrust = viewModel::onRetryVeranaTrust,
     )
 }
 
 @Composable
 private fun CredentialOfferScreenContent(
     isLoading: Boolean,
+    isVeranaTrustLoading: Boolean,
     credentialOfferUiState: CredentialOfferUiState,
     announcementAxMessage: String?,
     onBadge: (BadgeType) -> Unit,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     onWrongData: () -> Unit,
+    onVeranaTrustDetails: () -> Unit,
+    onRetryVeranaTrust: () -> Unit,
 ) = Box(
     modifier = Modifier
         .fillMaxSize()
@@ -157,18 +164,24 @@ private fun CredentialOfferScreenContent(
     when (currentWindowAdaptiveInfo().windowWidthClass()) {
         WindowWidthClass.COMPACT -> CompactContent(
             credentialOffer = credentialOfferUiState,
+            isVeranaTrustLoading = isVeranaTrustLoading,
             onBadge = onBadge,
             onAccept = onAccept,
             onDecline = onDecline,
             onWrongData = onWrongData,
+            onVeranaTrustDetails = onVeranaTrustDetails,
+            onRetryVeranaTrust = onRetryVeranaTrust,
         )
 
         else -> LargeContent(
             credentialOffer = credentialOfferUiState,
+            isVeranaTrustLoading = isVeranaTrustLoading,
             onBadge = onBadge,
             onAccept = onAccept,
             onDecline = onDecline,
             onWrongData = onWrongData,
+            onVeranaTrustDetails = onVeranaTrustDetails,
+            onRetryVeranaTrust = onRetryVeranaTrust,
         )
     }
     LoadingOverlay(showOverlay = isLoading)
@@ -177,10 +190,13 @@ private fun CredentialOfferScreenContent(
 @Composable
 private fun CompactContent(
     credentialOffer: CredentialOfferUiState,
+    isVeranaTrustLoading: Boolean,
     onBadge: (BadgeType) -> Unit,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     onWrongData: () -> Unit,
+    onVeranaTrustDetails: () -> Unit,
+    onRetryVeranaTrust: () -> Unit,
 ) {
     var buttonsHeight by remember {
         mutableStateOf(0.dp)
@@ -200,6 +216,15 @@ private fun CompactContent(
                 InvitationHeader(
                     actorUiState = credentialOffer.issuer,
                     onBadge = onBadge,
+                )
+            }
+            item {
+                VeranaTrustCard(
+                    evidence = credentialOffer.issuer.veranaTrustEvidence,
+                    isLoading = isVeranaTrustLoading,
+                    onOpenDetails = onVeranaTrustDetails,
+                    onRetry = onRetryVeranaTrust,
+                    modifier = Modifier.padding(horizontal = Sizes.s04, vertical = Sizes.s02),
                 )
             }
             item {
@@ -226,6 +251,7 @@ private fun CompactContent(
         StickyButtons(
             onAccept = onAccept,
             onDecline = onDecline,
+            isAcceptEnabled = !isVeranaTrustLoading,
             onHeightMeasured = { buttonsHeight = it },
             modifier = Modifier
                 .fillMaxWidth()
@@ -260,10 +286,13 @@ private fun CredentialBoxCompact(
 @Composable
 private fun LargeContent(
     credentialOffer: CredentialOfferUiState,
+    isVeranaTrustLoading: Boolean,
     onBadge: (BadgeType) -> Unit,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     onWrongData: () -> Unit,
+    onVeranaTrustDetails: () -> Unit,
+    onRetryVeranaTrust: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.horizontalSafeDrawing()) {
@@ -275,10 +304,13 @@ private fun LargeContent(
             Spacer(modifier = Modifier.width(Sizes.s04))
             DetailsWithHeader(
                 credentialOffer = credentialOffer,
+                isVeranaTrustLoading = isVeranaTrustLoading,
                 onBadge = onBadge,
                 onAccept = onAccept,
                 onDecline = onDecline,
                 onWrongData = onWrongData,
+                onVeranaTrustDetails = onVeranaTrustDetails,
+                onRetryVeranaTrust = onRetryVeranaTrust,
             )
         }
     }
@@ -313,10 +345,13 @@ private fun CredentialBoxLarge(
 @Composable
 private fun DetailsWithHeader(
     credentialOffer: CredentialOfferUiState,
+    isVeranaTrustLoading: Boolean,
     onBadge: (BadgeType) -> Unit,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     onWrongData: () -> Unit,
+    onVeranaTrustDetails: () -> Unit,
+    onRetryVeranaTrust: () -> Unit,
 ) {
     var buttonsHeight by remember { mutableStateOf(0.dp) }
 
@@ -332,6 +367,16 @@ private fun DetailsWithHeader(
                 InvitationHeader(
                     actorUiState = credentialOffer.issuer,
                     onBadge = onBadge,
+                )
+            }
+
+            item {
+                VeranaTrustCard(
+                    evidence = credentialOffer.issuer.veranaTrustEvidence,
+                    isLoading = isVeranaTrustLoading,
+                    onOpenDetails = onVeranaTrustDetails,
+                    onRetry = onRetryVeranaTrust,
+                    modifier = Modifier.padding(horizontal = Sizes.s04, vertical = Sizes.s02),
                 )
             }
 
@@ -352,6 +397,7 @@ private fun DetailsWithHeader(
         StickyButtons(
             onAccept = onAccept,
             onDecline = onDecline,
+            isAcceptEnabled = !isVeranaTrustLoading,
             onHeightMeasured = { buttonsHeight = it },
             modifier = Modifier
                 .fillMaxWidth()
@@ -365,6 +411,7 @@ private fun DetailsWithHeader(
 private fun StickyButtons(
     onAccept: () -> Unit,
     onDecline: () -> Unit,
+    isAcceptEnabled: Boolean,
     onHeightMeasured: (Dp) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -381,6 +428,7 @@ private fun StickyButtons(
                         text = stringResource(id = R.string.tk_receive_credentialOffer_button_accept),
                         startIcon = painterResource(id = R.drawable.wallet_ic_checkmark),
                         onClick = onAccept,
+                        enabled = isAcceptEnabled,
                     )
                 },
                 {
@@ -404,6 +452,7 @@ private fun CredentialOfferScreenPreview() {
     WalletTheme {
         CredentialOfferScreenContent(
             isLoading = false,
+            isVeranaTrustLoading = false,
             credentialOfferUiState = CredentialOfferUiState(
                 issuer = ActorUiState(
                     name = "Test Issuer",
@@ -422,6 +471,8 @@ private fun CredentialOfferScreenPreview() {
             onAccept = {},
             onDecline = {},
             onWrongData = {},
+            onVeranaTrustDetails = {},
+            onRetryVeranaTrust = {},
         )
     }
 }
@@ -444,10 +495,13 @@ private fun CredentialOfferLargeContentPreview() {
                 credential = CredentialMocks.cardState01,
                 claims = CredentialMocks.clusterList,
             ),
+            isVeranaTrustLoading = false,
             onBadge = {},
             onAccept = {},
             onDecline = {},
             onWrongData = {},
+            onVeranaTrustDetails = {},
+            onRetryVeranaTrust = {},
         )
     }
 }

@@ -8,5 +8,5 @@ import java.net.URI
 
 fun interface GetCredentialOfferFromUri {
     @CheckResult
-    operator fun invoke(uri: URI): Result<CredentialOffer, GetCredentialOfferError>
+    suspend operator fun invoke(uri: URI): Result<CredentialOffer, GetCredentialOfferError>
 }

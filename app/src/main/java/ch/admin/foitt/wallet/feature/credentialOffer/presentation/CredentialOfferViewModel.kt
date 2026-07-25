@@ -34,6 +34,7 @@ import ch.admin.foitt.wallet.platform.ssi.domain.model.SsiError
 import ch.admin.foitt.wallet.platform.ssi.domain.usecase.DeleteCredential
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.utils.openLink
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import com.github.michaelbull.result.annotation.UnsafeResultValueAccess
 import com.github.michaelbull.result.onFailure
 import com.github.michaelbull.result.onSuccess
@@ -42,6 +43,8 @@ import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -82,8 +85,12 @@ class CredentialOfferViewModel @AssistedInject constructor(
 
     private val actorDisplayData = getActorForScope(ComponentScope.CredentialIssuer)
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading = _isLoading.asStateFlow()
+    private val _isCredentialOfferLoading = MutableStateFlow(true)
+    private val _isVeranaTrustLoading = MutableStateFlow(true)
+    private var veranaTrustFetchJob: Job? = null
+    private var veranaTrustFetchGeneration = 0
+    val isLoading = _isCredentialOfferLoading.asStateFlow()
+    val isVeranaTrustLoading = _isVeranaTrustLoading.asStateFlow()
 
     @OptIn(UnsafeResultValueAccess::class)
     val credentialOfferUiState = refreshableStateFlow(initialData = CredentialOfferUiState.EMPTY) {
@@ -93,7 +100,7 @@ class CredentialOfferViewModel @AssistedInject constructor(
         ) { credentialOfferResult, actorDisplayData ->
             when {
                 credentialOfferResult.isOk -> {
-                    _isLoading.value = false
+                    _isCredentialOfferLoading.value = false
                     mapToUiState(
                         credentialOffer = credentialOfferResult.value,
                         actorDisplayData = actorDisplayData,
@@ -122,30 +129,38 @@ class CredentialOfferViewModel @AssistedInject constructor(
 
     init {
         viewModelScope.launch {
-            launch { updateCredentialStatus(credentialId) }
-            launch { fetchAndCacheIssuerDisplayData(credentialId) }
+            updateCredentialStatus(credentialId)
+        }
+        fetchIssuerDisplayData()
+    }
+
+    fun onAcceptClicked() {
+        if (_isVeranaTrustLoading.value) return
+
+        if (credentialOfferUiState.stateFlow.value.issuer.trustStatus != TrustStatus.EXTERNAL) {
+            acceptCredential()
+        } else {
+            _showConfirmationBottomSheet.value = true
         }
     }
 
-    fun onAcceptClicked() = if (credentialOfferUiState.stateFlow.value.issuer.trustStatus != TrustStatus.EXTERNAL) {
-        acceptCredential()
-    } else {
-        _showConfirmationBottomSheet.value = true
-    }
+    fun acceptCredential() {
+        if (_isVeranaTrustLoading.value) return
 
-    fun acceptCredential() = viewModelScope.launch {
-        acceptCredential(credentialId).onFailure {
-            navigateToErrorScreen()
-            return@launch
+        viewModelScope.launch {
+            acceptCredential(credentialId).onFailure {
+                navigateToErrorScreen()
+                return@launch
+            }
+            saveFirstCredentialWasAdded()
+            saveIssuanceActivity(
+                credentialId = credentialId,
+                actorDisplayData = actorDisplayData.value,
+                issuerFallbackName = appContext.getString(R.string.tk_credential_offer_issuer_name_unknown)
+            )
+            credentialOfferEventRepository.setEvent(CredentialOfferEvent.ACCEPTED)
+            navManager.popBackStackOrToRoot()
         }
-        saveFirstCredentialWasAdded()
-        saveIssuanceActivity(
-            credentialId = credentialId,
-            actorDisplayData = actorDisplayData.value,
-            issuerFallbackName = appContext.getString(R.string.tk_credential_offer_issuer_name_unknown)
-        )
-        credentialOfferEventRepository.setEvent(CredentialOfferEvent.ACCEPTED)
-        navManager.popBackStackOrToRoot()
     }
 
     fun onDeclineClicked() {
@@ -196,6 +211,45 @@ class CredentialOfferViewModel @AssistedInject constructor(
 
     fun onReportWrongDataClicked() {
         navManager.navigateTo(Destination.ReportWrongDataScreen)
+    }
+
+    fun onVeranaTrustDetails() {
+        val evidence = actorDisplayData.value.veranaTrustEvidence ?: return
+        if (
+            evidence.verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED ||
+            evidence.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
+        ) {
+            navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
+        }
+    }
+
+    fun onRetryVeranaTrust() {
+        fetchIssuerDisplayData()
+    }
+
+    private fun fetchIssuerDisplayData() {
+        val generation = ++veranaTrustFetchGeneration
+        veranaTrustFetchJob?.cancel()
+        veranaTrustFetchJob = viewModelScope.launch {
+            _isVeranaTrustLoading.value = true
+            try {
+                fetchAndCacheIssuerDisplayData(credentialId).onFailure {
+                    if (generation == veranaTrustFetchGeneration) {
+                        navigateToErrorScreen()
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (generation == veranaTrustFetchGeneration) {
+                    navigateToErrorScreen()
+                }
+            } finally {
+                if (generation == veranaTrustFetchGeneration) {
+                    _isVeranaTrustLoading.value = false
+                }
+            }
+        }
     }
 
     private fun onMoreInformation(@StringRes uriResource: Int) = appContext.openLink(uriResource)

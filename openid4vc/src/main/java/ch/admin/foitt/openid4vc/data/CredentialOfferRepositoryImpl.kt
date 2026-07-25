@@ -26,6 +26,9 @@ import ch.admin.foitt.openid4vc.domain.model.credentialoffer.toFetchVerifiableCr
 import ch.admin.foitt.openid4vc.domain.model.jwe.DecryptJWEError
 import ch.admin.foitt.openid4vc.domain.model.jwt.Jwt
 import ch.admin.foitt.openid4vc.domain.model.payloadEncryption.PayloadEncryptionType
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.FetchJwtVcIssuerMetadataError
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.JwtVcIssuerMetadata
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwtError
 import ch.admin.foitt.openid4vc.domain.repository.CredentialOfferRepository
 import ch.admin.foitt.openid4vc.domain.usecase.jwe.DecryptJWE
 import ch.admin.foitt.openid4vc.utils.Constants
@@ -152,6 +155,43 @@ internal class CredentialOfferRepositoryImpl @Inject constructor(
             null
         )
     )
+
+    override suspend fun fetchJwtVcIssuerMetadata(
+        issuerEndpoint: URL,
+    ): Result<JwtVcIssuerMetadata, FetchJwtVcIssuerMetadataError> = coroutineBinding {
+        val credentialIssuer = latestIssuerCredentialInfo?.credentialIssuer
+            ?: Err(VcSdJwtError.IssuerValidationFailed).bind()
+        if (!issuerEndpoint.hasSameOriginAs(credentialIssuer)) {
+            Err(VcSdJwtError.IssuerValidationFailed).bind<JwtVcIssuerMetadata>()
+        }
+
+        val builder = URLBuilder(issuerEndpoint.toString())
+        builder.path("/.well-known/jwt-vc-issuer${issuerEndpoint.path.trimEnd('/')}")
+        val metadataEndpoint = builder.build()
+
+        val response = runSuspendCatching {
+            httpClient.get(metadataEndpoint)
+        }.mapError { VcSdJwtError.NetworkError }.bind()
+        if (response.call.request.url != metadataEndpoint) {
+            Err(VcSdJwtError.IssuerValidationFailed).bind<JwtVcIssuerMetadata>()
+        }
+
+        val payload = runSuspendCatching {
+            response.bodyAsText()
+        }.mapError { VcSdJwtError.NetworkError }.bind()
+
+        safeJson.safeDecodeStringTo<JwtVcIssuerMetadata>(payload)
+            .mapError { VcSdJwtError.IssuerValidationFailed }
+            .bind()
+    }
+
+    private fun URL.hasSameOriginAs(other: URL): Boolean =
+        protocol == other.protocol &&
+            host.equals(other.host, ignoreCase = true) &&
+            effectivePort == other.effectivePort
+
+    private val URL.effectivePort: Int
+        get() = port.takeUnless { it == -1 } ?: defaultPort
 
     override suspend fun fetchIssuerConfiguration(issuerEndpoint: URL) = coroutineBinding {
         // First prio is OID4VCI/IETF style (f. ex. https://example.com/issuer1 -> https://example.com/.well-known/oauth-authorization-server/issuer1

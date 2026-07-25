@@ -220,11 +220,34 @@ class ValidatePresentationRequestImplTest {
     }
 
     @Test
-    fun `DID_PATH verification outcome results in null verifierAttestationTrusted`() = runTest {
+    fun `DID_PATH verification outcome carries the normalized authenticated verifier DID`() = runTest {
         coEvery { mockVerifyRequestObjectSignature(any(), any()) } returns Ok(RequestObjectVerificationOutcome.DID_PATH)
 
         val result = useCase(VerificationProcessType.NETWORK, mockRequestObject).assertOk()
         assertNull(result.verifierAttestationTrusted)
+        assertEquals("did:example:12345", result.authenticatedVerifierDid)
+        assertEquals(mockPresentationJwt.rawJwt, result.rawPresentationRequest)
+    }
+
+    @Test
+    fun `raw DID client identifier is carried after DID_PATH verification`() = runTest {
+        val rawDid = "did:example:raw"
+        val payloadJson = MockPresentationRequest.authorizationRequest.toJsonObject().toMutableMap().apply {
+            put("client_id", JsonPrimitive(rawDid))
+        }.let { JsonObject(it) }
+        every { mockPresentationJwt.payloadJson } returns payloadJson
+        coEvery { mockRequestObject.clientId } returns rawDid
+
+        val result = useCase(VerificationProcessType.NETWORK, mockRequestObject).assertOk()
+
+        assertEquals(rawDid, result.authenticatedVerifierDid)
+    }
+
+    @Test
+    fun `DID_PATH proximity verification never carries an authenticated Verana verifier DID`() = runTest {
+        val result = useCase(VerificationProcessType.PROXIMITY, mockRequestObject).assertOk()
+
+        assertNull(result.authenticatedVerifierDid)
     }
 
     @Test
@@ -244,6 +267,7 @@ class ValidatePresentationRequestImplTest {
 
         val result = useCase(VerificationProcessType.PROXIMITY, mockRequestObject).assertOk()
         assertEquals(false, result.verifierAttestationTrusted)
+        assertNull(result.authenticatedVerifierDid)
     }
 
     @Test
@@ -273,6 +297,7 @@ class ValidatePresentationRequestImplTest {
 
         val result = useCase(VerificationProcessType.PROXIMITY, mockRequestObject).assertOk()
         assertEquals(true, result.verifierAttestationTrusted)
+        assertNull(result.authenticatedVerifierDid)
     }
 
     @Test
@@ -281,6 +306,7 @@ class ValidatePresentationRequestImplTest {
 
         val result = useCase(VerificationProcessType.NETWORK, mockRequestObject).assertOk()
         assertNull(result.verifierAttestationTrusted)
+        assertNull(result.authenticatedVerifierDid)
     }
 
     @Test

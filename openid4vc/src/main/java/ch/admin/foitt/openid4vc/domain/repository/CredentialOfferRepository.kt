@@ -16,6 +16,8 @@ import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.IssuerConf
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.IssuerCredentialInfo
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.RawAndParsedIssuerCredentialInfo
 import ch.admin.foitt.openid4vc.domain.model.payloadEncryption.PayloadEncryptionType
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.FetchJwtVcIssuerMetadataError
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.JwtVcIssuerMetadata
 import com.github.michaelbull.result.Result
 import java.net.URL
 
@@ -30,6 +32,11 @@ interface CredentialOfferRepository {
     suspend fun getIssuerCredentialInfo(
         issuerEndpoint: URL
     ): Result<IssuerCredentialInfo, FetchIssuerCredentialInfoError>
+
+    @CheckResult
+    suspend fun fetchJwtVcIssuerMetadata(
+        issuerEndpoint: URL,
+    ): Result<JwtVcIssuerMetadata, FetchJwtVcIssuerMetadataError>
 
     @CheckResult
     suspend fun fetchIssuerConfiguration(

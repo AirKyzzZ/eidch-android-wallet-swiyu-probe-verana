@@ -60,7 +60,7 @@ interface InvitationError {
     data object NoCredentialsFound : GetCredentialOfferError, ValidateInvitationError
     data class UnsupportedGrantType(val message: String) : GetCredentialOfferError, ValidateInvitationError
     data class CredentialOfferDeserializationFailed(val throwable: Throwable) : GetCredentialOfferError, ValidateInvitationError
-    data object NetworkError : ProcessInvitationError, GetPresentationRequestError, ValidateInvitationError
+    data object NetworkError : ProcessInvitationError, GetCredentialOfferError, GetPresentationRequestError, ValidateInvitationError
     data class EmptyWallet(val responseUri: String?) : ProcessInvitationError
     data class NoCompatibleCredential(val responseUri: String?) : ProcessInvitationError
     data object InvalidInput : ProcessInvitationError
@@ -134,6 +134,7 @@ internal fun GetProximityPresentationRequestError.toValidateInvitationError(): V
 
 internal fun GetCredentialOfferError.toValidateInvitationError(): ValidateInvitationError = when (this) {
     is CredentialOfferDeserializationFailed -> this
+    is NetworkError -> this
     is NoCredentialsFound -> this
     is UnsupportedGrantType -> this
 }

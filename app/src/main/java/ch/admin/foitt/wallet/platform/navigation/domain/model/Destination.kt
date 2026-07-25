@@ -9,6 +9,7 @@ import ch.admin.foitt.wallet.platform.eIdApplicationProcess.domain.model.Guardia
 import ch.admin.foitt.wallet.platform.genericScreens.domain.model.GenericErrorScreenState
 import ch.admin.foitt.wallet.platform.invitation.domain.model.InvitationErrorScreenState
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.model.NonComplianceReportReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.verification.domain.model.VerificationMode
 import ch.admin.foitt.wallet.platform.versionEnforcement.domain.model.EnforcementType
 import kotlinx.serialization.Serializable
@@ -507,6 +508,14 @@ sealed interface Destination : NavKey {
     data object ReportWrongDataScreen : Destination
 
     // endregion platform/reportWrongData
+    // region platform/veranaTrust
+
+    @Serializable
+    data class VeranaTrustDetailsScreen(
+        val evidence: VeranaTrustEvidence,
+    ) : Destination, ScopedComponentGroup.CredentialIssuer, ScopedComponentGroup.Verifier
+
+    // endregion platform/veranaTrust
     // region platform/otp
 
     @Serializable

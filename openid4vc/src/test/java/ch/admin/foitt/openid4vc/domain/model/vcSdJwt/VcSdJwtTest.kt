@@ -8,6 +8,7 @@ import com.nimbusds.jose.Payload
 import com.nimbusds.jose.crypto.ECDSASigner
 import com.nimbusds.jose.jwk.Curve
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -36,6 +37,15 @@ class VcSdJwtTest {
         assertThrows<IllegalStateException> {
             VcSdJwt(VC_SD_JWT_MISSING_KID)
         }
+    }
+
+    @Test
+    fun `Creating a VcSdJwt with an x5c DID binding succeeds without a kid`() = runTest {
+        val vcSdJwt = VcSdJwt(createX5cVcSdJwt(TEST_CERTIFICATE))
+
+        assertEquals(X5C_ISSUER_DID, vcSdJwt.kid)
+        assertEquals(true, vcSdJwt.isX5cIssuerKey)
+        assertEquals(X5C_ISSUER_DID, vcSdJwt.x5cIssuerDid)
     }
 
     @Test
@@ -81,6 +91,30 @@ class VcSdJwtTest {
     }
 
     @Test
+    fun `Creating a VcSdJwt with a non-selectively disclosable credential id succeeds`() = runTest {
+        val tokenParts = VALID_VC_SD_JWT.split(".")
+        val payload = """{"iss":"issuer","vct":"vct","id":"credential-id"}"""
+        val encodedPayload = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray())
+
+        val vcSdJwt = VcSdJwt("${tokenParts[0]}.$encodedPayload.${tokenParts[2]}")
+
+        assertEquals("credential-id", vcSdJwt.processedJson["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `Credential schema id is preserved as non-selective Verana evidence`() = runTest {
+        val tokenParts = VALID_VC_SD_JWT.split(".")
+        val schemaId = "https://issuer.example/vt/schemas-employee-jsc.json"
+        val payload = """{"iss":"issuer","vct":"vct","credentialSchema":{"id":"$schemaId","type":"JsonSchemaCredential"}}"""
+        val encodedPayload = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray())
+
+        val credential = VcSdJwtCredential(payload = "${tokenParts[0]}.$encodedPayload.${tokenParts[2]}")
+
+        assertEquals(schemaId, credential.vcSchemaId)
+        assertEquals(VCT, credential.vct)
+    }
+
+    @Test
     fun `Creating a VcSdJwt without an expiry_date set results in a null value for businessExpiryDate`() {
         val vcSdJwt = VcSdJwt(VALID_VC_SD_JWT)
         assertNull(vcSdJwt.businessExpiryDate)
@@ -115,6 +149,20 @@ class VcSdJwtTest {
         const val KID = "keyId"
         const val ISS = "issuer"
         const val VCT = "vct"
+        const val X5C_ISSUER_DID = "did:web:issuer.example"
+        const val TEST_CERTIFICATE =
+            "MIIBwTCCAWigAwIBAgIUGXH44CstBMukT4p9p/L0/SrRBwYwCgYIKoZIzj0EAwIwHDEaMBgGA1UEAwwRU1dJWVUgVGVzdCBJc3N1ZXIwHhcNMjYwNzE4MTU1MjIwWhcNMzYwNzE1MTU1MjIwWjAcMRowGAYDVQQDDBFTV0lZVSBUZXN0IElzc3VlcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGQmspXYSAla/4TBbp14+TNRdwupVh4h06UxMmZlc2Za5jGJKw7xNlwhRRrJfUCXDRc757ZapFS9D3v3pviHQrWjgYcwgYQwHQYDVR0OBBYEFCn+jiJ71MIv22yjA1mI3uvoRVeoMB8GA1UdIwQYMBaAFCn+jiJ71MIv22yjA1mI3uvoRVeoMA8GA1UdEwEB/wQFMAMBAf8wMQYDVR0RBCowKIYWZGlkOndlYjppc3N1ZXIuZXhhbXBsZYIOaXNzdWVyLmV4YW1wbGUwCgYIKoZIzj0EAwIDRwAwRAIgL9u7oDmxVLlfXvCoOW+TZ+yTLhb2KFzDdwIrW/Wz/8gCIB25GnmO4u7ijFtdkSj5JrpRkwrNIVuEdv6VKcjVaQ38"
+
+        fun createX5cVcSdJwt(certificate: String): String {
+            val encoder = Base64.getUrlEncoder().withoutPadding()
+            val header = encoder.encodeToString(
+                """{"alg":"ES256","typ":"dc+sd-jwt","x5c":["$certificate"]}""".toByteArray()
+            )
+            val payload = encoder.encodeToString(
+                """{"iss":"https://issuer.example","vct":"vct"}""".toByteArray()
+            )
+            return "$header.$payload.c2lnbmF0dXJl~"
+        }
 
         val CNF_JWK = """
           {

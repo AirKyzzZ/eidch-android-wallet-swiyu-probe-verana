@@ -5,6 +5,7 @@ import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorType
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.model.ActorComplianceState
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 
 data class ActorUiState(
     val name: String?,
@@ -14,6 +15,7 @@ data class ActorUiState(
     val actorType: ActorType,
     val actorComplianceState: ActorComplianceState,
     val nonComplianceReason: String?,
+    val veranaTrustEvidence: VeranaTrustEvidence? = null,
 ) {
     companion object {
         val EMPTY = ActorUiState(
@@ -24,6 +26,7 @@ data class ActorUiState(
             actorType = ActorType.UNKNOWN,
             actorComplianceState = ActorComplianceState.UNKNOWN,
             nonComplianceReason = null,
+            veranaTrustEvidence = null,
         )
     }
 }

@@ -31,6 +31,7 @@ internal class GetActorUiStateImpl @Inject constructor(
             actorType = actorDisplayData.actorType,
             actorComplianceState = actorDisplayData.actorComplianceState,
             nonComplianceReason = localizedNonComplianceReason,
+            veranaTrustEvidence = actorDisplayData.veranaTrustEvidence,
         )
     }
 

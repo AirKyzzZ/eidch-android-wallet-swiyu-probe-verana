@@ -17,6 +17,9 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.IdentityV1Trust
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustCheckResult
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import io.mockk.MockKAnnotations
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -264,6 +267,32 @@ class CacheIssuerDisplayDataImplTest {
         }
 
         assertEquals(TrustStatus.EXTERNAL, capturedDisplayData.captured.trustStatus)
+    }
+
+    @Test
+    fun `Verana evidence is attached without changing Swiss trust fields`() = runTest {
+        val trustCheckResult = TrustCheckResult(
+            actorTrustStatement = mockIdentityTrustStatement,
+            vcSchemaTrustStatus = VcSchemaTrustStatus.TRUSTED,
+            actorEnvironment = ActorEnvironment.PRODUCTION,
+        )
+        val evidence = VeranaTrustEvidence(
+            role = VeranaTrustRole.ISSUER,
+            did = "did:web:issuer.example",
+            vcSchemaIds = listOf("https://schemas.example/credential"),
+            verdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
+            summary = null,
+            authorizations = emptyList(),
+        )
+
+        useCase(trustCheckResult, credentialIssuerDisplays, nonComplianceData, evidence)
+
+        val capturedDisplayData = slot<ActorDisplayData>()
+        coVerify {
+            mockInitializeActorForScope.invoke(actorDisplayData = capture(capturedDisplayData), any())
+        }
+        assertEquals(TrustStatus.TRUSTED, capturedDisplayData.captured.trustStatus)
+        assertEquals(evidence, capturedDisplayData.captured.veranaTrustEvidence)
     }
 
     //region mock data

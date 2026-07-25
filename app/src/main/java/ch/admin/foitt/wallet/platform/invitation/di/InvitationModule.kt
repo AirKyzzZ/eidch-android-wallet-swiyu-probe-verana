@@ -1,11 +1,13 @@
 package ch.admin.foitt.wallet.platform.invitation.di
 
+import ch.admin.foitt.wallet.platform.invitation.domain.usecase.FetchCredentialOfferByReference
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.GetCredentialOfferFromUri
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.GetPresentationRequestFromUri
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.GetProximityPresentationRequestFromUri
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.HandleInvitationProcessingSuccess
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.ProcessInvitation
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.ValidateInvitation
+import ch.admin.foitt.wallet.platform.invitation.domain.usecase.implementation.FetchCredentialOfferByReferenceImpl
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.implementation.GetCredentialOfferFromUriImpl
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.implementation.GetPresentationRequestFromUriImpl
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.implementation.GetProximityPresentationRequestFromUriImpl
@@ -44,6 +46,11 @@ internal interface InvitationModule {
     fun bindGetCredentialOfferFromUri(
         useCase: GetCredentialOfferFromUriImpl
     ): GetCredentialOfferFromUri
+
+    @Binds
+    fun bindFetchCredentialOfferByReference(
+        useCase: FetchCredentialOfferByReferenceImpl
+    ): FetchCredentialOfferByReference
 
     @Binds
     fun bindHandleInvitationProcessing(

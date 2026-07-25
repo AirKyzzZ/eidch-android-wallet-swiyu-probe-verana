@@ -1,0 +1,61 @@
+package ch.admin.foitt.wallet.platform.veranaTrust.domain.model
+
+import kotlinx.serialization.Serializable
+
+const val VeranaTrustResolverUrl = "https://resolver.testnet.verana.network"
+
+@Serializable
+enum class VeranaTrustRole {
+    ISSUER,
+    VERIFIER,
+}
+
+@Serializable
+enum class VeranaTrustVerdict {
+    TRUSTED_AUTHORIZED,
+    TRUSTED_NOT_AUTHORIZED,
+    UNTRUSTED,
+    RESOLVER_UNAVAILABLE,
+}
+
+@Serializable
+data class VeranaTrustSummary(
+    val did: String,
+    val trustStatus: String,
+    val production: Boolean,
+    val evaluatedAt: String,
+    val evaluatedAtBlock: Long,
+    val expiresAt: String,
+)
+
+@Serializable
+data class VeranaAuthorizationEvidence(
+    val did: String,
+    val vcSchemaId: String,
+    val authorized: Boolean,
+    val evaluatedAt: String,
+    val evaluatedAtBlock: Long,
+)
+
+@Serializable
+data class VeranaTrustEvidence(
+    val role: VeranaTrustRole,
+    val did: String,
+    val vcSchemaIds: List<String>,
+    val verdict: VeranaTrustVerdict,
+    val summary: VeranaTrustSummary?,
+    val authorizations: List<VeranaAuthorizationEvidence>,
+    val resolverUrl: String = VeranaTrustResolverUrl,
+)
+
+@Serializable
+data class VeranaVerifierTrustContext(
+    val authenticatedVerifierDid: String,
+    val credentialId: Long,
+)
+
+sealed interface VeranaResolverResult<out T> {
+    data class Success<T>(val value: T) : VeranaResolverResult<T>
+    data object NotFound : VeranaResolverResult<Nothing>
+    data object Unavailable : VeranaResolverResult<Nothing>
+}

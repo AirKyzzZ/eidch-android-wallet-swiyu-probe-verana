@@ -20,7 +20,7 @@ class VcSdJwtCredential(
 ) : VcSdJwt(rawVcSdJwt = payload), AnyCredential {
 
     override val issuer: String
-        get() = getDidFromAbsoluteKid(kid).asString()
+        get() = if (isX5cIssuerKey) checkNotNull(x5cIssuerDid) else getDidFromAbsoluteKid(kid).asString()
 
     override val validity: Validity
         get() {
@@ -41,7 +41,7 @@ class VcSdJwtCredential(
 
     override val validUntilInstant: Instant? = validUntil?.let { Instant.ofEpochSecond(it) } ?: expInstant
 
-    override val vcSchemaId: String = vct
+    override val vcSchemaId: String = credentialSchemaId ?: vct
 
     /**
      * @returns all claims that we want to save in the database (i. e. only the disclosable claims)

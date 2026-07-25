@@ -6,6 +6,7 @@ import ch.admin.foitt.openid4vc.domain.model.credentialoffer.Grant
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.PreAuthorizedContent
 import ch.admin.foitt.wallet.platform.credential.domain.usecase.implementation.mock.MockFetchCredential.CREDENTIAL_ISSUER
 import ch.admin.foitt.wallet.platform.invitation.domain.model.InvitationError
+import ch.admin.foitt.wallet.platform.invitation.domain.usecase.FetchCredentialOfferByReference
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.GetCredentialOfferFromUri
 import ch.admin.foitt.wallet.platform.invitation.domain.usecase.implementation.GetCredentialOfferFromUriImpl
 import ch.admin.foitt.wallet.util.SafeJsonTestInstance.safeJson
@@ -30,7 +31,12 @@ class GetCredentialOfferFlowDataFromUriTest {
     fun setup() {
         mockkStatic(URLUtil::class)
         every { URLUtil.isHttpsUrl(any()) } returns true
-        getCredentialOfferUseCase = GetCredentialOfferFromUriImpl(safeJson)
+        getCredentialOfferUseCase = GetCredentialOfferFromUriImpl(
+            safeJson = safeJson,
+            fetchCredentialOfferByReference = FetchCredentialOfferByReference {
+                error("Inline credential offers must not perform a network request")
+            },
+        )
     }
 
     @AfterEach
@@ -39,7 +45,7 @@ class GetCredentialOfferFlowDataFromUriTest {
     }
 
     @Test
-    fun `valid VC invitation should return a CredentialOffer`() {
+    fun `valid VC invitation should return a CredentialOffer`() = runTest {
         val input = VALID_URI
         val expected = Ok(
             CredentialOffer(
@@ -55,7 +61,7 @@ class GetCredentialOfferFlowDataFromUriTest {
     }
 
     @Test
-    fun `invalid VC invitation should return an error`() {
+    fun `invalid VC invitation should return an error`() = runTest {
         assertTrue(
             getCredentialOfferUseCase(uri = URI("")).getError() is InvitationError.CredentialOfferDeserializationFailed,
             "empty input should return an error"
@@ -108,6 +114,68 @@ class GetCredentialOfferFlowDataFromUriTest {
     fun `Getting credential offer maps json parsing errors`() = runTest {
         val result = getCredentialOfferUseCase(INVALID_JSON_URI)
         result.assertErrorType(InvitationError.CredentialOfferDeserializationFailed::class)
+    }
+
+    @Test
+    fun `credential offer uri fetches and parses the referenced offer`() = runTest {
+        val referencedOffer = """
+            {
+              "credential_issuer": "https://issuer.example.com",
+              "credential_configuration_ids": ["testcred"],
+              "grants": {
+                "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+                  "pre-authorized_code": "fresh-secret"
+                }
+              }
+            }
+        """.trimIndent()
+        var fetchedUri: URI? = null
+        val fetcher = FetchCredentialOfferByReference { uri ->
+            fetchedUri = uri
+            Ok(referencedOffer)
+        }
+        val useCase = GetCredentialOfferFromUriImpl(safeJson, fetcher)
+
+        val result = useCase(
+            URI(
+                "openid-credential-offer://?credential_offer_uri=" +
+                    "https%3A%2F%2Fissuer.example.com%2Foffers%2Ftrusted"
+            )
+        )
+
+        assertEquals(
+            CredentialOffer(
+                credentialIssuer = CREDENTIAL_ISSUER,
+                credentialConfigurationIds = listOf("testcred"),
+                grants = Grant(
+                    preAuthorizedCode = PreAuthorizedContent(preAuthorizedCode = "fresh-secret"),
+                    authorizedCode = null,
+                ),
+            ),
+            result.component1(),
+        )
+        assertEquals(URI("https://issuer.example.com/offers/trusted"), fetchedUri)
+    }
+
+    @Test
+    fun `credential offer uri rejects ambiguous or unsafe references`() = runTest {
+        val unsafeUris = listOf(
+            "openid-credential-offer://?credential_offer_uri=http%3A%2F%2Fissuer.example.com%2Foffer",
+            "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fuser%40issuer.example.com%2Foffer",
+            "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer%23fragment",
+            "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Fone" +
+                "&credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Ftwo",
+            "openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer" +
+                "&credential_offer=%7B%7D",
+        )
+
+        unsafeUris.forEach { uri ->
+            assertTrue(
+                getCredentialOfferUseCase(URI(uri)).getError() is
+                    InvitationError.CredentialOfferDeserializationFailed,
+                "unsafe credential offer reference should be rejected: $uri",
+            )
+        }
     }
 
     companion object {

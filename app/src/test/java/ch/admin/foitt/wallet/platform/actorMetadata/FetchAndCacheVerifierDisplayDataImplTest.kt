@@ -1,5 +1,6 @@
 package ch.admin.foitt.wallet.platform.actorMetadata
 
+import ch.admin.foitt.openid4vc.domain.model.anycredential.AnyCredential
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientMetaData
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientName
@@ -9,12 +10,14 @@ import ch.admin.foitt.wallet.platform.actorEnvironment.domain.usecase.GetActorEn
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorDisplayData
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorField
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorType
+import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.ActorUpdateGate
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.FetchAndCacheVerifierDisplayData
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.InitializeActorForScope
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.implementation.FetchAndCacheVerifierDisplayDataImpl
 import ch.admin.foitt.wallet.platform.actorMetadata.mock.ActorMetadataMocks.actorComplianceState
 import ch.admin.foitt.wallet.platform.actorMetadata.mock.ActorMetadataMocks.nonComplianceData
 import ch.admin.foitt.wallet.platform.actorMetadata.mock.ActorMetadataMocks.nonComplianceReasons
+import ch.admin.foitt.wallet.platform.credential.domain.usecase.GetAllAnyCredentialsByCredentialId
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.VerificationProcessType
 import ch.admin.foitt.wallet.platform.database.domain.model.DisplayLanguage
 import ch.admin.foitt.wallet.platform.navigation.domain.model.ComponentScope
@@ -27,6 +30,11 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.FetchVcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.ProcessIdentityV1TrustStatement
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
 import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
 import io.mockk.MockKAnnotations
@@ -36,6 +44,7 @@ import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.just
+import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.slot
 import io.mockk.unmockkAll
@@ -65,10 +74,19 @@ class FetchAndCacheVerifierDisplayDataImplTest {
     private lateinit var mockInitializeActorForScope: InitializeActorForScope
 
     @MockK
+    private lateinit var mockGetAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId
+
+    @MockK
+    private lateinit var mockEvaluateVeranaTrust: EvaluateVeranaTrust
+
+    @MockK
     private lateinit var mockAuthorizationRequest: AuthorizationRequest
 
     @MockK
     private lateinit var mockIdentityTrustStatement: IdentityV1TrustStatement
+
+    @MockK
+    private lateinit var mockAnyCredential: AnyCredential
 
     private lateinit var useCase: FetchAndCacheVerifierDisplayData
 
@@ -81,6 +99,9 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             fetchVcSchemaTrustStatus = mockFetchVcSchemaTrustStatus,
             fetchNonComplianceData = mockFetchNonComplianceData,
             initializeActorForScope = mockInitializeActorForScope,
+            getAllAnyCredentialsByCredentialId = mockGetAllAnyCredentialsByCredentialId,
+            evaluateVeranaTrust = mockEvaluateVeranaTrust,
+            actorUpdateGate = ActorUpdateGate(),
         )
 
         setupDefaultMocks()
@@ -465,6 +486,108 @@ class FetchAndCacheVerifierDisplayDataImplTest {
         )
     }
 
+    @Test
+    fun `final presentation evaluates the authenticated DID against stored credential schemas`() = runTest {
+        useCase(
+            authorizationRequest = mockAuthorizationRequest,
+            verificationProcessType = VerificationProcessType.NETWORK,
+            verifierAttestationTrusted = null,
+            veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
+        )
+
+        coVerify(exactly = 1) { mockGetAllAnyCredentialsByCredentialId(CREDENTIAL_ID) }
+        coVerify(exactly = 1) {
+            mockEvaluateVeranaTrust(
+                role = VeranaTrustRole.VERIFIER,
+                did = AUTHENTICATED_DID,
+                vcSchemaIds = setOf(STORED_SCHEMA_ID),
+            )
+        }
+        val capturedDisplayData = slot<ActorDisplayData>()
+        coVerify {
+            mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
+        }
+        assertEquals(veranaTrustEvidence, capturedDisplayData.captured.veranaTrustEvidence)
+    }
+
+    @Test
+    fun `Verana uses every distinct stored schema and never request display metadata`() = runTest {
+        val secondCredential = mockk<AnyCredential>()
+        every { secondCredential.vcSchemaId } returns STORED_SCHEMA_ID_2
+        coEvery {
+            mockGetAllAnyCredentialsByCredentialId(CREDENTIAL_ID)
+        } returns Ok(listOf(mockAnyCredential, secondCredential, mockAnyCredential))
+
+        useCase(
+            authorizationRequest = mockAuthorizationRequest,
+            verificationProcessType = VerificationProcessType.NETWORK,
+            verifierAttestationTrusted = null,
+            veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
+        )
+
+        coVerify(exactly = 1) {
+            mockEvaluateVeranaTrust(
+                role = VeranaTrustRole.VERIFIER,
+                did = AUTHENTICATED_DID,
+                vcSchemaIds = setOf(STORED_SCHEMA_ID, STORED_SCHEMA_ID_2),
+            )
+        }
+    }
+
+    @Test
+    fun `credential-list and proximity calls never evaluate Verana`() = runTest {
+        useCase(mockAuthorizationRequest, VerificationProcessType.NETWORK, null)
+        useCase(
+            mockAuthorizationRequest,
+            VerificationProcessType.PROXIMITY,
+            true,
+            VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
+        )
+
+        coVerify(exactly = 0) { mockGetAllAnyCredentialsByCredentialId(any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+    }
+
+    @Test
+    fun `missing stored schema never calls the Verana resolver`() = runTest {
+        every { mockAnyCredential.vcSchemaId } returns " "
+
+        useCase(
+            authorizationRequest = mockAuthorizationRequest,
+            verificationProcessType = VerificationProcessType.NETWORK,
+            verifierAttestationTrusted = null,
+            veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
+        )
+
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        val capturedDisplayData = slot<ActorDisplayData>()
+        coVerify {
+            mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
+        }
+        assertEquals(VeranaTrustVerdict.UNTRUSTED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
+    }
+
+    @Test
+    fun `unavailable stored credential never calls the Verana resolver`() = runTest {
+        coEvery {
+            mockGetAllAnyCredentialsByCredentialId(CREDENTIAL_ID)
+        } returns Err(mockk())
+
+        useCase(
+            authorizationRequest = mockAuthorizationRequest,
+            verificationProcessType = VerificationProcessType.NETWORK,
+            verifierAttestationTrusted = null,
+            veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
+        )
+
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        val capturedDisplayData = slot<ActorDisplayData>()
+        coVerify {
+            mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
+        }
+        assertEquals(VeranaTrustVerdict.UNTRUSTED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
+    }
+
     private fun setupDefaultMocks() {
         every { mockAuthorizationRequest.clientId } returns clientId
         every { mockAuthorizationRequest.clientMetaData } returns mockClientMetadata
@@ -490,6 +613,14 @@ class FetchAndCacheVerifierDisplayDataImplTest {
 
         coEvery { mockFetchNonComplianceData(clientId) } returns nonComplianceData
 
+        every { mockAnyCredential.vcSchemaId } returns STORED_SCHEMA_ID
+        coEvery {
+            mockGetAllAnyCredentialsByCredentialId(CREDENTIAL_ID)
+        } returns Ok(listOf(mockAnyCredential))
+        coEvery {
+            mockEvaluateVeranaTrust(any(), any(), any())
+        } returns veranaTrustEvidence
+
         coEvery {
             mockInitializeActorForScope.invoke(any(), componentScope = ComponentScope.Verifier)
         } just runs
@@ -498,6 +629,22 @@ class FetchAndCacheVerifierDisplayDataImplTest {
     //region mock data
     private val clientId = "clientId1"
     private val vcSchemaId = "vcSchemaId"
+
+    private companion object {
+        const val AUTHENTICATED_DID = "did:web:verifier.example"
+        const val CREDENTIAL_ID = 42L
+        const val STORED_SCHEMA_ID = "https://schemas.example/stored"
+        const val STORED_SCHEMA_ID_2 = "https://schemas.example/stored-2"
+
+        val veranaTrustEvidence = VeranaTrustEvidence(
+            role = VeranaTrustRole.VERIFIER,
+            did = AUTHENTICATED_DID,
+            vcSchemaIds = listOf(STORED_SCHEMA_ID),
+            verdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
+            summary = null,
+            authorizations = emptyList(),
+        )
+    }
 
     private val trustRegistryError = Err(TrustRegistryError.Unexpected(IllegalStateException("error")))
 

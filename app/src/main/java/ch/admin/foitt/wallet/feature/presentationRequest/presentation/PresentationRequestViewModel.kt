@@ -45,6 +45,8 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.utils.launchWithDelayedLoading
 import ch.admin.foitt.wallet.platform.utils.openLink
 import ch.admin.foitt.wallet.platform.utils.trackCompletion
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import com.github.michaelbull.result.mapBoth
 import com.github.michaelbull.result.onFailure
 import dagger.assisted.Assisted
@@ -52,7 +54,9 @@ import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -110,6 +114,13 @@ class PresentationRequestViewModel @AssistedInject constructor(
     private val _showConfirmationBottomSheet: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val showConfirmationBottomSheet = _showConfirmationBottomSheet.asStateFlow()
 
+    private val _isPresentationRequestLoading = MutableStateFlow(true)
+    private val _isVeranaTrustLoading = MutableStateFlow(true)
+    private var veranaTrustFetchJob: Job? = null
+    private var veranaTrustFetchGeneration = 0
+    val isLoading = _isPresentationRequestLoading.asStateFlow()
+    val isVeranaTrustLoading = _isVeranaTrustLoading.asStateFlow()
+
     val presentationRequestUiState = refreshableStateFlow(PresentationRequestUiState.EMPTY) {
         getPresentationRequestFlow(
             id = compatibleCredential.credentialId,
@@ -117,7 +128,7 @@ class PresentationRequestViewModel @AssistedInject constructor(
         ).map { result ->
             result.mapBoth(
                 success = { presentationRequestUi ->
-                    _isLoading.value = false
+                    _isPresentationRequestLoading.value = false
                     presentationRequestUi.toUiState()
                 },
                 failure = {
@@ -127,9 +138,6 @@ class PresentationRequestViewModel @AssistedInject constructor(
             )
         }.filterNotNull()
     }
-
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading = _isLoading.asStateFlow()
 
     private val _isSubmitting = MutableStateFlow(false)
     val isSubmitting = _isSubmitting.asStateFlow()
@@ -153,16 +161,12 @@ class PresentationRequestViewModel @AssistedInject constructor(
     }
 
     init {
-        viewModelScope.launch {
-            fetchAndCacheVerifierDisplayData(
-                presentationRequestWithRaw.authorizationRequest,
-                presentationRequestWithRaw.verificationProcessType,
-                presentationRequestWithRaw.verifierAttestationTrusted,
-            )
-        }
+        fetchVerifierDisplayData()
     }
 
     fun onAccept() {
+        if (_isVeranaTrustLoading.value) return
+
         _showConfirmationBottomSheet.value = when (credentialCardStatus) {
             CredentialDisplayStatus.Suspended,
             is CredentialDisplayStatus.BusinessExpired -> true
@@ -174,6 +178,8 @@ class PresentationRequestViewModel @AssistedInject constructor(
     }
 
     fun submit() {
+        if (_isVeranaTrustLoading.value) return
+
         viewModelScope.launchWithDelayedLoading(
             isLoadingFlow = _showDelayReason,
             delay = DELAY_REASON_DURATION
@@ -250,6 +256,56 @@ class PresentationRequestViewModel @AssistedInject constructor(
             destination = Destination.PresentationDeclinedScreen
         )
     }
+
+    fun onVeranaTrustDetails() {
+        val evidence = verifierDisplayData.value.veranaTrustEvidence ?: return
+        if (
+            evidence.verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED ||
+            evidence.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
+        ) {
+            navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
+        }
+    }
+
+    fun onRetryVeranaTrust() {
+        fetchVerifierDisplayData()
+    }
+
+    private fun fetchVerifierDisplayData() {
+        val generation = ++veranaTrustFetchGeneration
+        veranaTrustFetchJob?.cancel()
+        veranaTrustFetchJob = viewModelScope.launch {
+            _isVeranaTrustLoading.value = true
+            try {
+                fetchAndCacheVerifierDisplayData(
+                    presentationRequestWithRaw.authorizationRequest,
+                    presentationRequestWithRaw.verificationProcessType,
+                    presentationRequestWithRaw.verifierAttestationTrusted,
+                    veranaTrustContext(),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (generation == veranaTrustFetchGeneration) {
+                    navigateToErrorScreen()
+                }
+            } finally {
+                if (generation == veranaTrustFetchGeneration) {
+                    _isVeranaTrustLoading.value = false
+                }
+            }
+        }
+    }
+
+    private fun veranaTrustContext(): VeranaVerifierTrustContext? =
+        presentationRequestWithRaw.authenticatedVerifierDid
+            ?.takeIf { it.isNotBlank() }
+            ?.let { authenticatedDid ->
+                VeranaVerifierTrustContext(
+                    authenticatedVerifierDid = authenticatedDid,
+                    credentialId = compatibleCredential.credentialId,
+                )
+            }
 
     private fun navigateToSuccess() {
         navManager.replaceCurrentWith(

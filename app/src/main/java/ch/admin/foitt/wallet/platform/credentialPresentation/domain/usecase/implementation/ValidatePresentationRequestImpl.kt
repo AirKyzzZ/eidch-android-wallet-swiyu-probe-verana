@@ -78,14 +78,11 @@ class ValidatePresentationRequestImpl @Inject constructor(
             CredentialPresentationError.Unexpected(throwable)
         }.bind()
 
-        if (verificationProcessType == VerificationProcessType.NETWORK) {
-            val clientIdentifier = ClientIdentifier.fromRequestObject(requestObject)
-                .mapError { CredentialPresentationError.InvalidRequest(responseUri) }
-                .bind()
-            if (clientIdentifier.clientIdPrefix == ClientIdentifier.ClientIdPrefix.VerifierAttestationJwt) {
-                Err(CredentialPresentationError.InvalidRequest(responseUri)).bind<Unit>()
-            }
-        }
+        val clientIdentifier = parseNetworkClientIdentifier(
+            verificationProcessType = verificationProcessType,
+            requestObject = requestObject,
+            responseUri = responseUri,
+        ).bind()
 
         runSuspendCatching {
             check(jwt.algorithm == SigningAlgorithm.ES256.stdName)
@@ -139,7 +136,47 @@ class ValidatePresentationRequestImpl @Inject constructor(
                 RequestObjectVerificationOutcome.ATTESTATION_UNTRUSTED -> false
                 RequestObjectVerificationOutcome.DID_PATH, null -> null
             },
+            authenticatedVerifierDid = getAuthenticatedVerifierDid(
+                verificationProcessType = verificationProcessType,
+                verificationOutcome = verificationOutcome,
+                clientIdentifier = clientIdentifier,
+            ),
         )
+    }
+
+    private suspend fun parseNetworkClientIdentifier(
+        verificationProcessType: VerificationProcessType,
+        requestObject: RequestObject,
+        responseUri: String?,
+    ): Result<ClientIdentifier?, ValidatePresentationRequestError> = if (
+        verificationProcessType == VerificationProcessType.NETWORK
+    ) {
+        coroutineBinding {
+            ClientIdentifier.fromRequestObject(requestObject)
+                .mapError { CredentialPresentationError.InvalidRequest(responseUri) }
+                .bind()
+                .also { clientIdentifier ->
+                    if (clientIdentifier.clientIdPrefix == ClientIdentifier.ClientIdPrefix.VerifierAttestationJwt) {
+                        Err(CredentialPresentationError.InvalidRequest(responseUri)).bind<Unit>()
+                    }
+                }
+        }
+    } else {
+        Ok(null)
+    }
+
+    private fun getAuthenticatedVerifierDid(
+        verificationProcessType: VerificationProcessType,
+        verificationOutcome: RequestObjectVerificationOutcome?,
+        clientIdentifier: ClientIdentifier?,
+    ): String? {
+        val didPathWasVerified = environmentSetupRepository.verifyRequestObjectSignature &&
+            verificationProcessType == VerificationProcessType.NETWORK &&
+            verificationOutcome == RequestObjectVerificationOutcome.DID_PATH
+
+        return clientIdentifier?.clientId?.takeIf { clientId ->
+            didPathWasVerified && clientId.isNotBlank() && clientId.startsWith("did:")
+        }
     }
 
     @Suppress("CyclomaticComplexMethod")

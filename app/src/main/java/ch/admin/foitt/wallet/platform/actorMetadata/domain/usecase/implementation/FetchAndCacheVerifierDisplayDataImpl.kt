@@ -7,8 +7,10 @@ import ch.admin.foitt.wallet.platform.actorEnvironment.domain.usecase.GetActorEn
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorDisplayData
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorField
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorType
+import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.ActorUpdateGate
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.FetchAndCacheVerifierDisplayData
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.InitializeActorForScope
+import ch.admin.foitt.wallet.platform.credential.domain.usecase.GetAllAnyCredentialsByCredentialId
 import ch.admin.foitt.wallet.platform.credential.domain.util.entityNames
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.VerificationProcessType
 import ch.admin.foitt.wallet.platform.navigation.domain.model.ComponentScope
@@ -21,6 +23,11 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.FetchVcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.ProcessIdentityV1TrustStatement
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
 import com.github.michaelbull.result.get
 import com.github.michaelbull.result.getOrElse
 import timber.log.Timber
@@ -33,12 +40,17 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
     private val fetchVcSchemaTrustStatus: FetchVcSchemaTrustStatus,
     private val fetchNonComplianceData: FetchNonComplianceData,
     private val initializeActorForScope: InitializeActorForScope,
+    private val getAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId,
+    private val evaluateVeranaTrust: EvaluateVeranaTrust,
+    private val actorUpdateGate: ActorUpdateGate,
 ) : FetchAndCacheVerifierDisplayData {
     override suspend fun invoke(
         authorizationRequest: AuthorizationRequest,
         verificationProcessType: VerificationProcessType,
         verifierAttestationTrusted: Boolean?,
+        veranaTrustContext: VeranaVerifierTrustContext?,
     ) {
+        val actorUpdateGeneration = actorUpdateGate.begin(ComponentScope.Verifier)
         val verifierNameDisplay = authorizationRequest.clientMetaData?.toVerifierName()
         val verifierLogoDisplay = authorizationRequest.clientMetaData?.toVerifierLogo()
 
@@ -47,6 +59,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
                 verifierNameDisplay = verifierNameDisplay,
                 verifierLogoDisplay = verifierLogoDisplay,
                 verifierAttestationTrusted = verifierAttestationTrusted,
+                actorUpdateGeneration = actorUpdateGeneration,
             )
             return
         }
@@ -70,6 +83,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
 
         val nonComplianceData = fetchNonComplianceData(actorDid = authorizationRequest.clientId)
         val nonComplianceReason: List<ActorField<String>>? = nonComplianceData.reasonDisplays?.toNonComplianceReason()
+        val veranaTrustEvidence = evaluateVeranaTrust(veranaTrustContext)
 
         val presentationVerifierDisplay = ActorDisplayData(
             name = verifierTrustNameDisplay,
@@ -80,18 +94,25 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
             actorType = ActorType.VERIFIER,
             actorComplianceState = nonComplianceData.state,
             nonComplianceReason = nonComplianceReason,
+            veranaTrustEvidence = veranaTrustEvidence,
         )
 
-        initializeActorForScope(
-            actorDisplayData = presentationVerifierDisplay,
+        actorUpdateGate.publishIfCurrent(
             componentScope = ComponentScope.Verifier,
-        )
+            generation = actorUpdateGeneration,
+        ) {
+            initializeActorForScope(
+                actorDisplayData = presentationVerifierDisplay,
+                componentScope = ComponentScope.Verifier,
+            )
+        }
     }
 
     private suspend fun cacheProximityVerifierFromMetadata(
         verifierNameDisplay: List<ActorField<String>>?,
         verifierLogoDisplay: List<ActorField<String>>?,
         verifierAttestationTrusted: Boolean?,
+        actorUpdateGeneration: Long,
     ) {
         val trustStatus = if (verifierAttestationTrusted == true) {
             TrustStatus.TRUSTED_PROXIMITY_VERIFIER
@@ -105,19 +126,59 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
             VcSchemaTrustStatus.NOT_TRUSTED
         }
 
-        initializeActorForScope(
-            actorDisplayData = ActorDisplayData(
-                name = verifierNameDisplay,
-                image = verifierLogoDisplay,
-                trustStatus = trustStatus,
-                vcSchemaTrustStatus = vcSchemaTrustStatus,
-                preferredLanguage = null,
-                actorType = ActorType.VERIFIER,
-                actorComplianceState = ActorComplianceState.UNKNOWN,
-                nonComplianceReason = null,
-            ),
+        actorUpdateGate.publishIfCurrent(
             componentScope = ComponentScope.Verifier,
-        )
+            generation = actorUpdateGeneration,
+        ) {
+            initializeActorForScope(
+                actorDisplayData = ActorDisplayData(
+                    name = verifierNameDisplay,
+                    image = verifierLogoDisplay,
+                    trustStatus = trustStatus,
+                    vcSchemaTrustStatus = vcSchemaTrustStatus,
+                    preferredLanguage = null,
+                    actorType = ActorType.VERIFIER,
+                    actorComplianceState = ActorComplianceState.UNKNOWN,
+                    nonComplianceReason = null,
+                    veranaTrustEvidence = null,
+                ),
+                componentScope = ComponentScope.Verifier,
+            )
+        }
+    }
+
+    private suspend fun evaluateVeranaTrust(
+        context: VeranaVerifierTrustContext?,
+    ): VeranaTrustEvidence? {
+        context ?: return null
+
+        val verifierDid = context.authenticatedVerifierDid
+        val credentials = getAllAnyCredentialsByCredentialId(context.credentialId).get()
+        val schemaIds = credentials.orEmpty().map { it.vcSchemaId.trim() }
+        val distinctSchemaIds = schemaIds.filter { it.isNotBlank() }.toSet()
+        val hasValidDid = verifierDid.isNotBlank() &&
+            verifierDid == verifierDid.trim() &&
+            verifierDid.startsWith("did:")
+        val hasValidSchemas = credentials != null &&
+            schemaIds.isNotEmpty() &&
+            schemaIds.none { it.isBlank() }
+
+        return if (hasValidDid && hasValidSchemas) {
+            evaluateVeranaTrust(
+                role = VeranaTrustRole.VERIFIER,
+                did = verifierDid,
+                vcSchemaIds = distinctSchemaIds,
+            )
+        } else {
+            VeranaTrustEvidence(
+                role = VeranaTrustRole.VERIFIER,
+                did = verifierDid,
+                vcSchemaIds = distinctSchemaIds.sorted(),
+                verdict = VeranaTrustVerdict.UNTRUSTED,
+                summary = null,
+                authorizations = emptyList(),
+            )
+        }
     }
 
     private fun ClientMetaData.toVerifierName(): List<ActorField<String>> = clientNameList.map { entry ->

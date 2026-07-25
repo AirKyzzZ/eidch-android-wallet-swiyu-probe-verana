@@ -4,6 +4,7 @@ import ch.admin.foitt.wallet.platform.database.domain.model.LocalizedDisplay
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.model.ActorComplianceState
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -16,6 +17,7 @@ data class ActorDisplayData(
     val actorType: ActorType,
     val actorComplianceState: ActorComplianceState,
     val nonComplianceReason: List<ActorField<String>>?,
+    val veranaTrustEvidence: VeranaTrustEvidence? = null,
 ) {
     companion object {
         val EMPTY by lazy {
@@ -28,6 +30,7 @@ data class ActorDisplayData(
                 actorType = ActorType.UNKNOWN,
                 actorComplianceState = ActorComplianceState.UNKNOWN,
                 nonComplianceReason = null,
+                veranaTrustEvidence = null,
             )
         }
     }

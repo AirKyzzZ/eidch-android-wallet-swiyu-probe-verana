@@ -13,6 +13,7 @@ import ch.admin.foitt.wallet.platform.nonCompliance.domain.model.NonComplianceDa
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.model.NonComplianceReasonDisplay
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustCheckResult
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import javax.inject.Inject
 
 internal class CacheIssuerDisplayDataImpl @Inject constructor(
@@ -22,6 +23,7 @@ internal class CacheIssuerDisplayDataImpl @Inject constructor(
         trustCheckResult: TrustCheckResult,
         issuerDisplays: List<AnyIssuerDisplay>,
         nonComplianceData: NonComplianceData,
+        veranaTrustEvidence: VeranaTrustEvidence?,
     ) {
         val trustStatus = getTrustStatus(trustCheckResult)
 
@@ -38,7 +40,8 @@ internal class CacheIssuerDisplayDataImpl @Inject constructor(
             preferredLanguage = null,
             actorType = ActorType.ISSUER,
             actorComplianceState = nonComplianceData.state,
-            nonComplianceReason = reasonDisplay
+            nonComplianceReason = reasonDisplay,
+            veranaTrustEvidence = veranaTrustEvidence,
         )
 
         initializeActorForScope(
