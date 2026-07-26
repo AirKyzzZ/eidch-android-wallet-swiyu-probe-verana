@@ -23,6 +23,7 @@
     <string name="verana_trust_authorization_section_verifier">Q3 verification authorization</string>
     <string name="verana_trust_status">Trust status</string>
     <string name="verana_trust_production">Production</string>
+    <string name="verana_trust_testnet_label">TESTNET</string>
     <string name="verana_trust_authorized">Authorized</string>
     <string name="verana_trust_yes">Yes</string>
     <string name="verana_trust_no">No</string>

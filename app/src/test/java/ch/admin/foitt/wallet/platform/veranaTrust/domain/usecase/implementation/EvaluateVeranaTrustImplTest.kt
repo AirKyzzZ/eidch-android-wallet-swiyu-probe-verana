@@ -52,7 +52,7 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `trusted production DID with every issuer schema authorized is positive`() = runTest {
+    fun `trusted DID with every issuer schema authorized is positive`() = runTest {
         val result = useCase(
             role = VeranaTrustRole.ISSUER,
             did = DID,
@@ -73,7 +73,7 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `trusted production DID with every verifier schema authorized is positive`() = runTest {
+    fun `trusted DID with every verifier schema authorized is positive`() = runTest {
         val result = useCase(
             role = VeranaTrustRole.VERIFIER,
             did = DID,
@@ -122,11 +122,10 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `Q1 partial untrusted or non-production is untrusted`() = runTest {
+    fun `Q1 partial or untrusted is untrusted`() = runTest {
         val summaries = listOf(
             trustedSummary().copy(trustStatus = "PARTIAL"),
             trustedSummary().copy(trustStatus = "UNTRUSTED"),
-            trustedSummary().copy(production = false),
         )
 
         summaries.forEach { summary ->
@@ -137,6 +136,18 @@ class EvaluateVeranaTrustImplTest {
             assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
         }
         coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
+    }
+
+    @Test
+    fun `resolver production flag does not gate trust`() = runTest {
+        coEvery {
+            repository.fetchSummary(DID)
+        } returns VeranaResolverResult.Success(trustedSummary().copy(production = false))
+
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+
+        assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
+        coVerify { repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A) }
     }
 
     @Test

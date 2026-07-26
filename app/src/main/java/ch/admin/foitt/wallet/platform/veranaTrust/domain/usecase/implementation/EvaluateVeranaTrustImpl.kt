@@ -74,7 +74,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
         }
 
         val evidenceWithSummary = emptyEvidence.copy(summary = summary)
-        if (!summary.isTrustedProductionDid(did)) {
+        if (!summary.isTrustedDid(did)) {
             return evidenceWithSummary
         }
 
@@ -117,8 +117,8 @@ class EvaluateVeranaTrustImpl @Inject constructor(
         )
     }
 
-    private fun VeranaTrustSummary.isTrustedProductionDid(expectedDid: String): Boolean =
-        did == expectedDid && trustStatus == TRUSTED_STATUS && production
+    private fun VeranaTrustSummary.isTrustedDid(expectedDid: String): Boolean =
+        did == expectedDid && trustStatus == TRUSTED_STATUS
 
     private companion object {
         const val TRUSTED_STATUS = "TRUSTED"

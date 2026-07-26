@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import ch.admin.foitt.wallet.R
 import ch.admin.foitt.wallet.platform.composables.presentation.spaceBarKeyClickable
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaNetworkProduction
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.adapter.mapVeranaTrustUiState
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustAction
@@ -49,6 +50,7 @@ fun VeranaTrustCard(
     val actionLabel = state.actionLabelResId()?.let { stringResource(it) }
     val title = stringResource(state?.titleResId ?: R.string.verana_trust_loading_title)
     val description = stringResource(state?.descriptionResId ?: R.string.verana_trust_loading_description)
+    val networkLabel = if (VeranaNetworkProduction) null else stringResource(R.string.verana_trust_testnet_label)
     val colors = cardColors(state?.tone ?: VeranaTrustTone.NEUTRAL)
 
     Surface(
@@ -64,7 +66,7 @@ fun VeranaTrustCard(
                 }
             )
             .semantics {
-                contentDescription = listOfNotNull(title, description, actionLabel).joinToString(". ")
+                contentDescription = listOfNotNull(title, networkLabel, description, actionLabel).joinToString(". ")
                 if (action != null) role = Role.Button
             },
         color = colors.container,
@@ -87,6 +89,9 @@ fun VeranaTrustCard(
                 verticalArrangement = Arrangement.spacedBy(Sizes.s02),
             ) {
                 WalletTexts.TitleMediumEmphasized(text = title, color = colors.content)
+                networkLabel?.let { label ->
+                    WalletTexts.LabelMedium(text = label, color = colors.content)
+                }
                 WalletTexts.BodyMedium(text = description, color = colors.content)
                 state?.did?.let { did ->
                     WalletTexts.LabelMedium(
