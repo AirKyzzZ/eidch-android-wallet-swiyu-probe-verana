@@ -101,12 +101,12 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `Q1 not found is untrusted and skips authorization`() = runTest {
+    fun `Q1 not found is unverified and skips authorization`() = runTest {
         coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.NotFound
 
         val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
 
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
         assertTrue(result.authorizations.isEmpty())
         coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
     }
@@ -207,31 +207,31 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `blank DID or schema is untrusted without resolver access`() = runTest {
+    fun `blank DID or schema is unverified without resolver access`() = runTest {
         val blankDid = useCase(VeranaTrustRole.ISSUER, " ", setOf(SCHEMA_A))
         val blankSchema = useCase(VeranaTrustRole.ISSUER, DID, setOf(" "))
         val missingSchema = useCase(VeranaTrustRole.ISSUER, DID, emptySet())
 
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, blankDid.verdict)
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, blankSchema.verdict)
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, missingSchema.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, blankDid.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, blankSchema.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, missingSchema.verdict)
         confirmVerified(repository)
     }
 
     @Test
-    fun `non DID issuer is untrusted without resolver access`() = runTest {
+    fun `non DID issuer is unverified without resolver access`() = runTest {
         val result = useCase(
             role = VeranaTrustRole.ISSUER,
             did = "https://issuer.example",
             vcSchemaIds = setOf(SCHEMA_A),
         )
 
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
         confirmVerified(repository)
     }
 
     @Test
-    fun `malformed DIDs are untrusted without resolver access`() = runTest {
+    fun `malformed DIDs are unverified without resolver access`() = runTest {
         val malformedDids = listOf(
             "did:",
             "did:method",
@@ -248,7 +248,7 @@ class EvaluateVeranaTrustImplTest {
                 vcSchemaIds = setOf(SCHEMA_A),
             )
 
-            assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
+            assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
         }
         confirmVerified(repository)
     }

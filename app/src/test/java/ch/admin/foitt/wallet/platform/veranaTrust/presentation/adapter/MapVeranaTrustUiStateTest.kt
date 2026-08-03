@@ -53,6 +53,15 @@ class MapVeranaTrustUiStateTest {
     }
 
     @Test
+    fun `unverified is neutral and has no action`() {
+        val state = mapVeranaTrustUiState(evidence(verdict = VeranaTrustVerdict.UNVERIFIED))
+
+        assertEquals(R.string.verana_trust_unverified_title, state.titleResId)
+        assertEquals(VeranaTrustTone.NEUTRAL, state.tone)
+        assertEquals(VeranaTrustAction.NONE, state.action)
+    }
+
+    @Test
     fun `resolver unavailable is neutral and retries instead of opening details`() {
         val state = mapVeranaTrustUiState(evidence(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE))
 

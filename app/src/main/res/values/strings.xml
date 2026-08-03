@@ -7,7 +7,9 @@
     <string name="verana_trust_not_authorized_title">Trusted, but not authorized by Verana</string>
     <string name="verana_trust_not_authorized_description">This actor is trusted, but one or more credential types are not authorized.</string>
     <string name="verana_trust_untrusted_title">Not trusted by Verana</string>
-    <string name="verana_trust_untrusted_description">Verana could not establish trusted production status for this actor.</string>
+    <string name="verana_trust_untrusted_description">The Verana public registry does not vouch for this actor.</string>
+    <string name="verana_trust_unverified_title">Not verified by Verana</string>
+    <string name="verana_trust_unverified_description">This counterparty could not be verified against the Verana registry. It is neither trusted nor untrusted.</string>
     <string name="verana_trust_unavailable_title">Verana trust unavailable</string>
     <string name="verana_trust_unavailable_description">Trust evidence could not be retrieved. Try again before continuing.</string>
     <string name="verana_trust_loading_title">Checking Verana trust</string>

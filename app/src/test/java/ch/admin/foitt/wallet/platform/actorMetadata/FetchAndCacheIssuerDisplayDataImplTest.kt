@@ -332,7 +332,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
                 trustCheckResult = any(),
                 issuerDisplays = any(),
                 nonComplianceData = any(),
-                veranaTrustEvidence = match { it.verdict == VeranaTrustVerdict.UNTRUSTED },
+                veranaTrustEvidence = match { it.verdict == VeranaTrustVerdict.UNVERIFIED },
             )
         }
     }

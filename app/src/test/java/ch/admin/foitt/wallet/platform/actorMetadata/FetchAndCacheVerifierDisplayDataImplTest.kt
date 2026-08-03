@@ -564,7 +564,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
         coVerify {
             mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
         }
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
     }
 
     @Test
@@ -585,7 +585,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
         coVerify {
             mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
         }
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
+        assertEquals(VeranaTrustVerdict.UNVERIFIED, capturedDisplayData.captured.veranaTrustEvidence?.verdict)
     }
 
     private fun setupDefaultMocks() {

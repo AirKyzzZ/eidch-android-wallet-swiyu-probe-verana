@@ -174,7 +174,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
                 role = VeranaTrustRole.VERIFIER,
                 did = verifierDid,
                 vcSchemaIds = distinctSchemaIds.sorted(),
-                verdict = VeranaTrustVerdict.UNTRUSTED,
+                verdict = VeranaTrustVerdict.UNVERIFIED,
                 summary = null,
                 authorizations = emptyList(),
             )

@@ -122,7 +122,7 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
                 role = VeranaTrustRole.ISSUER,
                 did = issuerDid.orEmpty(),
                 vcSchemaIds = distinctSchemaIds.sorted(),
-                verdict = VeranaTrustVerdict.UNTRUSTED,
+                verdict = VeranaTrustVerdict.UNVERIFIED,
                 summary = null,
                 authorizations = emptyList(),
             )

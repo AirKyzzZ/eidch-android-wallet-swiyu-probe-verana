@@ -19,6 +19,7 @@ enum class VeranaTrustVerdict {
     TRUSTED_AUTHORIZED,
     TRUSTED_NOT_AUTHORIZED,
     UNTRUSTED,
+    UNVERIFIED,
     RESOLVER_UNAVAILABLE,
 }
 

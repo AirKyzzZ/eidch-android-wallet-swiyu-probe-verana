@@ -27,7 +27,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
             role = role,
             did = did,
             vcSchemaIds = sortedSchemaIds,
-            verdict = VeranaTrustVerdict.UNTRUSTED,
+            verdict = VeranaTrustVerdict.UNVERIFIED,
             summary = null,
             authorizations = emptyList(),
         )
@@ -75,7 +75,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
 
         val evidenceWithSummary = emptyEvidence.copy(summary = summary)
         if (!summary.isTrustedDid(did)) {
-            return evidenceWithSummary
+            return evidenceWithSummary.copy(verdict = VeranaTrustVerdict.UNTRUSTED)
         }
 
         val authorizations = mutableListOf<VeranaAuthorizationEvidence>()

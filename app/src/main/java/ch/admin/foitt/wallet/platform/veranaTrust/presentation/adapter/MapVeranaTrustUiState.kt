@@ -38,6 +38,13 @@ fun mapVeranaTrustUiState(
             action = VeranaTrustAction.NONE,
         )
 
+        VeranaTrustVerdict.UNVERIFIED -> VerdictPresentation(
+            titleResId = R.string.verana_trust_unverified_title,
+            descriptionResId = R.string.verana_trust_unverified_description,
+            tone = VeranaTrustTone.NEUTRAL,
+            action = VeranaTrustAction.NONE,
+        )
+
         VeranaTrustVerdict.RESOLVER_UNAVAILABLE -> VerdictPresentation(
             titleResId = R.string.verana_trust_unavailable_title,
             descriptionResId = R.string.verana_trust_unavailable_description,
