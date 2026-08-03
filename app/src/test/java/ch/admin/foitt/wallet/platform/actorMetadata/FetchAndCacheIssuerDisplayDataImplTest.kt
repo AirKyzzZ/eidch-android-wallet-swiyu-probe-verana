@@ -25,7 +25,9 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustSt
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import ch.admin.foitt.wallet.util.assertErrorType
 import ch.admin.foitt.wallet.util.assertOk
@@ -63,6 +65,9 @@ class FetchAndCacheIssuerDisplayDataImplTest {
     private lateinit var mockResolveVtjscIdFromVct: ResolveVtjscIdFromVct
 
     @MockK
+    private lateinit var mockFetchVeranaTrustDetails: FetchVeranaTrustDetails
+
+    @MockK
     private lateinit var mockCredentialIssuerDisplayRepo: CredentialIssuerDisplayRepo
 
     @MockK
@@ -96,6 +101,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             fetchTrustForIssuance = mockFetchTrustForIssuance,
             evaluateVeranaTrust = mockEvaluateVeranaTrust,
             resolveVtjscIdFromVct = mockResolveVtjscIdFromVct,
+            fetchVeranaTrustDetails = mockFetchVeranaTrustDetails,
             credentialIssuerDisplayRepo = mockCredentialIssuerDisplayRepo,
             getLocalizedDisplay = mockGetLocalizedDisplay,
             fetchNonComplianceData = mockFetchNonComplianceData,
@@ -114,6 +120,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             mockEvaluateVeranaTrust(any(), any(), any(), any())
         } returns veranaTrustEvidence
         coEvery { mockResolveVtjscIdFromVct(any(), any()) } answers { secondArg() }
+        coEvery { mockFetchVeranaTrustDetails(any()) } returns VeranaResolverResult.Unavailable
 
         coEvery {
             mockCredentialIssuerDisplayRepo.getIssuerDisplays(credentialId = any())

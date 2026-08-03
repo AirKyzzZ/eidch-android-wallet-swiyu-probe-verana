@@ -18,10 +18,12 @@ import ch.admin.foitt.wallet.platform.navigation.domain.model.ComponentScope
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.usecase.FetchNonComplianceData
 import ch.admin.foitt.wallet.platform.ssi.domain.model.CredentialIssuerDisplayRepositoryError
 import ch.admin.foitt.wallet.platform.ssi.domain.repository.CredentialIssuerDisplayRepo
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.Result
 import com.github.michaelbull.result.coroutines.coroutineBinding
@@ -34,6 +36,7 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
     private val fetchTrustForIssuance: FetchTrustForIssuance,
     private val evaluateVeranaTrust: EvaluateVeranaTrust,
     private val resolveVtjscIdFromVct: ResolveVtjscIdFromVct,
+    private val fetchVeranaTrustDetails: FetchVeranaTrustDetails,
     private val credentialIssuerDisplayRepo: CredentialIssuerDisplayRepo,
     private val getLocalizedDisplay: GetLocalizedDisplay,
     private val fetchNonComplianceData: FetchNonComplianceData,
@@ -56,7 +59,7 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
             issuerDid = anyCredential.issuer,
             vcSchemaId = anyCredential.vcSchemaId,
         )
-        val veranaTrustEvidence = evaluateVeranaTrust(anyCredentials)
+        val veranaTrustEvidence = evaluateVeranaTrust(anyCredentials).withResolvedCredentials()
         val actorTrustStatement = trustCheckResult.actorTrustStatement
         val savedIssuerDisplays = credentialIssuerDisplayRepo.getIssuerDisplays(credentialId)
             .mapError(CredentialIssuerDisplayRepositoryError::toFetchAndCacheIssuerDisplayDataError)
@@ -130,6 +133,17 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
                 summary = null,
                 authorizations = emptyList(),
             )
+        }
+    }
+
+    private suspend fun VeranaTrustEvidence.withResolvedCredentials(): VeranaTrustEvidence {
+        val summary = summary ?: return this
+        return when (val result = fetchVeranaTrustDetails(this)) {
+            is VeranaResolverResult.Success ->
+                if (result.value.summary == summary) copy(credentials = result.value.credentials) else this
+
+            VeranaResolverResult.NotFound,
+            VeranaResolverResult.Unavailable -> this
         }
     }
 

@@ -57,8 +57,18 @@ class FetchVeranaTrustDetailsImplTest {
     }
 
     @Test
-    fun `non-evidence-bearing verdict cannot request full details`() = runTest {
+    fun `untrusted evidence with an accepted summary still loads full details`() = runTest {
+        val expected = VeranaTrustDetails(summary = SUMMARY, credentials = emptyList())
+        coEvery { repository.fetchDetails(DID, SUMMARY) } returns VeranaResolverResult.Success(expected)
+
         val result = useCase(EVIDENCE.copy(verdict = VeranaTrustVerdict.UNTRUSTED))
+
+        assertEquals(VeranaResolverResult.Success(expected), result)
+    }
+
+    @Test
+    fun `summary DID mismatch cannot request full details`() = runTest {
+        val result = useCase(EVIDENCE.copy(did = "did:web:other.example"))
 
         assertEquals(VeranaResolverResult.Unavailable, result)
         confirmVerified(repository)

@@ -69,7 +69,7 @@ fun mapVeranaTrustUiState(
         summary = evidence.summary,
         authorizations = evidence.authorizations,
         resolverUrl = evidence.resolverUrl,
-        credentials = details?.credentials.orEmpty().map { credential ->
+        credentials = (details?.credentials ?: evidence.credentials).map { credential ->
             VeranaTrustCredentialUiState(
                 result = credential.result,
                 ecsType = credential.ecsType,

@@ -28,8 +28,10 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.ProcessIdenti
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.get
 import com.github.michaelbull.result.getOrElse
@@ -46,6 +48,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
     private val getAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId,
     private val evaluateVeranaTrust: EvaluateVeranaTrust,
     private val resolveVtjscIdFromVct: ResolveVtjscIdFromVct,
+    private val fetchVeranaTrustDetails: FetchVeranaTrustDetails,
     private val actorUpdateGate: ActorUpdateGate,
 ) : FetchAndCacheVerifierDisplayData {
     override suspend fun invoke(
@@ -87,7 +90,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
 
         val nonComplianceData = fetchNonComplianceData(actorDid = authorizationRequest.clientId)
         val nonComplianceReason: List<ActorField<String>>? = nonComplianceData.reasonDisplays?.toNonComplianceReason()
-        val veranaTrustEvidence = evaluateVeranaTrust(veranaTrustContext)
+        val veranaTrustEvidence = evaluateVeranaTrust(veranaTrustContext)?.withResolvedCredentials()
 
         val presentationVerifierDisplay = ActorDisplayData(
             name = verifierTrustNameDisplay,
@@ -183,6 +186,17 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
                 summary = null,
                 authorizations = emptyList(),
             )
+        }
+    }
+
+    private suspend fun VeranaTrustEvidence.withResolvedCredentials(): VeranaTrustEvidence {
+        val summary = summary ?: return this
+        return when (val result = fetchVeranaTrustDetails(this)) {
+            is VeranaResolverResult.Success ->
+                if (result.value.summary == summary) copy(credentials = result.value.credentials) else this
+
+            VeranaResolverResult.NotFound,
+            VeranaResolverResult.Unavailable -> this
         }
     }
 

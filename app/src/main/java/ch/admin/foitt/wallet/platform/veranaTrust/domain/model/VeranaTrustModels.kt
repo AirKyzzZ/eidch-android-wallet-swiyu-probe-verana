@@ -50,6 +50,7 @@ data class VeranaTrustEvidence(
     val verdict: VeranaTrustVerdict,
     val summary: VeranaTrustSummary?,
     val authorizations: List<VeranaAuthorizationEvidence>,
+    val credentials: List<VeranaTrustCredential> = emptyList(),
     val resolverUrl: String = VeranaTrustResolverUrl,
 )
 

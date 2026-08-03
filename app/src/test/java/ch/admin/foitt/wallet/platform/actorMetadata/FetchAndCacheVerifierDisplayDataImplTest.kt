@@ -34,7 +34,9 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEviden
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
@@ -84,6 +86,9 @@ class FetchAndCacheVerifierDisplayDataImplTest {
     private lateinit var mockResolveVtjscIdFromVct: ResolveVtjscIdFromVct
 
     @MockK
+    private lateinit var mockFetchVeranaTrustDetails: FetchVeranaTrustDetails
+
+    @MockK
     private lateinit var mockAuthorizationRequest: AuthorizationRequest
 
     @MockK
@@ -106,6 +111,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             getAllAnyCredentialsByCredentialId = mockGetAllAnyCredentialsByCredentialId,
             evaluateVeranaTrust = mockEvaluateVeranaTrust,
             resolveVtjscIdFromVct = mockResolveVtjscIdFromVct,
+            fetchVeranaTrustDetails = mockFetchVeranaTrustDetails,
             actorUpdateGate = ActorUpdateGate(),
         )
 
@@ -628,6 +634,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             mockEvaluateVeranaTrust(any(), any(), any(), any())
         } returns veranaTrustEvidence
         coEvery { mockResolveVtjscIdFromVct(any(), any()) } answers { secondArg() }
+        coEvery { mockFetchVeranaTrustDetails(any()) } returns VeranaResolverResult.Unavailable
 
         coEvery {
             mockInitializeActorForScope.invoke(any(), componentScope = ComponentScope.Verifier)
