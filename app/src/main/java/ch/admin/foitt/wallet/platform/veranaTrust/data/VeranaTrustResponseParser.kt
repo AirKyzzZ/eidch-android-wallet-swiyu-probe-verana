@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import java.net.URI
@@ -140,12 +141,20 @@ class VeranaTrustResponseParser @Inject constructor(
     private fun JsonObject.toAllowlistedClaims(): List<VeranaTrustClaim> = entries.mapNotNull { (name, element) ->
         if (name !in ALLOWED_CLAIMS) return@mapNotNull null
 
-        val values = when (element) {
-            is JsonPrimitive -> element.takeIf { it.isString }?.contentOrNull?.let(::listOf)
-            is JsonArray -> element.map { item ->
-                (item as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return@mapNotNull null
+        val values = if (name in INTEGER_CLAIMS) {
+            (element as? JsonPrimitive)
+                ?.takeUnless { it.isString }
+                ?.intOrNull
+                ?.takeIf { it >= 0 }
+                ?.let { listOf(it.toString()) }
+        } else {
+            when (element) {
+                is JsonPrimitive -> element.takeIf { it.isString }?.contentOrNull?.let(::listOf)
+                is JsonArray -> element.map { item ->
+                    (item as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return@mapNotNull null
+                }
+                else -> null
             }
-            else -> null
         }?.filter { it.isNotBlank() }.orEmpty()
         if (values.isEmpty()) return@mapNotNull null
 
@@ -237,14 +246,38 @@ class VeranaTrustResponseParser @Inject constructor(
             "name",
             "type",
             "description",
-            "privacyPolicy",
+            "descriptionFormat",
+            "logo",
+            "logoUri",
+            "logoDigestSri",
+            "minimumAgeRequired",
             "termsAndConditions",
+            "termsAndConditionsUri",
+            "termsAndConditionsDigestSri",
+            "termsAndConditionsHash",
+            "privacyPolicy",
+            "privacyPolicyUri",
+            "privacyPolicyDigestSri",
+            "privacyPolicyHash",
             "address",
             "registryId",
+            "registryUri",
             "countryCode",
             "legalJurisdiction",
+            "organizationKind",
+            "lei",
+            "id",
         )
-        val HTTP_URL_CLAIMS = setOf("privacyPolicy", "termsAndConditions")
+        val INTEGER_CLAIMS = setOf("minimumAgeRequired")
+        val HTTP_URL_CLAIMS = setOf(
+            "logo",
+            "logoUri",
+            "privacyPolicy",
+            "privacyPolicyUri",
+            "termsAndConditions",
+            "termsAndConditionsUri",
+            "registryUri",
+        )
         val HTTP_SCHEMES = setOf("http", "https")
     }
 }

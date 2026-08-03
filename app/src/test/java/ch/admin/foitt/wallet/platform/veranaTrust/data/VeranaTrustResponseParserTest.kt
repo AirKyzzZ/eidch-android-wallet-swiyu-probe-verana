@@ -112,6 +112,13 @@ class VeranaTrustResponseParserTest {
             "https://acme.example/privacy",
             credential.claims.single { it.name == "privacyPolicy" }.safeHttpUrl,
         )
+        assertEquals("text/markdown", credential.claims.single { it.name == "descriptionFormat" }.values.single())
+        assertEquals("18", credential.claims.single { it.name == "minimumAgeRequired" }.values.single())
+        assertEquals(
+            "https://acme.example/logo.png",
+            credential.claims.single { it.name == "logoUri" }.safeHttpUrl,
+        )
+        assertEquals("sha256-abc", credential.claims.single { it.name == "logoDigestSri" }.values.single())
         assertTrue(credential.claims.none { it.name == "nested" })
         assertTrue(credential.claims.none { it.name == "termsAndConditions" })
         assertEquals(1, credential.permissionChain.size)
@@ -195,6 +202,10 @@ class VeranaTrustResponseParserTest {
                 "name":"Acme Service",
                 "type":"Insurance",
                 "description":"A trusted service",
+                "descriptionFormat":"text/markdown",
+                "minimumAgeRequired":18,
+                "logoUri":"https://acme.example/logo.png",
+                "logoDigestSri":"sha256-abc",
                 "privacyPolicy":"https://acme.example/privacy",
                 "termsAndConditions":"javascript:alert(1)",
                 "nested":{"must":"not render"},
