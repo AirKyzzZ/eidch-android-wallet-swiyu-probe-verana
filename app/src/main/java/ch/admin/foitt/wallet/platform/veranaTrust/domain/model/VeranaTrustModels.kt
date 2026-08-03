@@ -52,6 +52,9 @@ data class VeranaTrustEvidence(
     val resolverUrl: String = VeranaTrustResolverUrl,
 )
 
+val VeranaTrustEvidence?.blocksAccept: Boolean
+    get() = this?.verdict == VeranaTrustVerdict.UNTRUSTED || this?.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
+
 @Serializable
 data class VeranaVerifierTrustContext(
     val authenticatedVerifierDid: String,

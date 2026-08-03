@@ -35,6 +35,7 @@ import ch.admin.foitt.wallet.platform.ssi.domain.usecase.DeleteCredential
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.utils.openLink
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
 import com.github.michaelbull.result.annotation.UnsafeResultValueAccess
 import com.github.michaelbull.result.onFailure
 import com.github.michaelbull.result.onSuccess
@@ -135,7 +136,7 @@ class CredentialOfferViewModel @AssistedInject constructor(
     }
 
     fun onAcceptClicked() {
-        if (_isVeranaTrustLoading.value) return
+        if (_isVeranaTrustLoading.value || actorDisplayData.value.veranaTrustEvidence.blocksAccept) return
 
         if (credentialOfferUiState.stateFlow.value.issuer.trustStatus != TrustStatus.EXTERNAL) {
             acceptCredential()
@@ -145,7 +146,7 @@ class CredentialOfferViewModel @AssistedInject constructor(
     }
 
     fun acceptCredential() {
-        if (_isVeranaTrustLoading.value) return
+        if (_isVeranaTrustLoading.value || actorDisplayData.value.veranaTrustEvidence.blocksAccept) return
 
         viewModelScope.launch {
             acceptCredential(credentialId).onFailure {

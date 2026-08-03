@@ -47,6 +47,7 @@ import ch.admin.foitt.wallet.platform.utils.openLink
 import ch.admin.foitt.wallet.platform.utils.trackCompletion
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
 import com.github.michaelbull.result.mapBoth
 import com.github.michaelbull.result.onFailure
 import dagger.assisted.Assisted
@@ -165,7 +166,7 @@ class PresentationRequestViewModel @AssistedInject constructor(
     }
 
     fun onAccept() {
-        if (_isVeranaTrustLoading.value) return
+        if (_isVeranaTrustLoading.value || verifierDisplayData.value.veranaTrustEvidence.blocksAccept) return
 
         _showConfirmationBottomSheet.value = when (credentialCardStatus) {
             CredentialDisplayStatus.Suspended,
@@ -178,7 +179,7 @@ class PresentationRequestViewModel @AssistedInject constructor(
     }
 
     fun submit() {
-        if (_isVeranaTrustLoading.value) return
+        if (_isVeranaTrustLoading.value || verifierDisplayData.value.veranaTrustEvidence.blocksAccept) return
 
         viewModelScope.launchWithDelayedLoading(
             isLoadingFlow = _showDelayReason,

@@ -66,6 +66,7 @@ import ch.admin.foitt.wallet.platform.preview.AllLargeScreensPreview
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.utils.TestTags
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.VeranaTrustCard
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletTexts
@@ -251,7 +252,7 @@ private fun CompactContent(
         StickyButtons(
             onAccept = onAccept,
             onDecline = onDecline,
-            isAcceptEnabled = !isVeranaTrustLoading,
+            isAcceptEnabled = !isVeranaTrustLoading && !credentialOffer.issuer.veranaTrustEvidence.blocksAccept,
             onHeightMeasured = { buttonsHeight = it },
             modifier = Modifier
                 .fillMaxWidth()
@@ -397,7 +398,7 @@ private fun DetailsWithHeader(
         StickyButtons(
             onAccept = onAccept,
             onDecline = onDecline,
-            isAcceptEnabled = !isVeranaTrustLoading,
+            isAcceptEnabled = !isVeranaTrustLoading && !credentialOffer.issuer.veranaTrustEvidence.blocksAccept,
             onHeightMeasured = { buttonsHeight = it },
             modifier = Modifier
                 .fillMaxWidth()
