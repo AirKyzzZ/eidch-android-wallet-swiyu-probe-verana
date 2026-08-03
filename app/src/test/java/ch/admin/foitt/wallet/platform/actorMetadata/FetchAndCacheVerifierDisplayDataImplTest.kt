@@ -35,6 +35,7 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
 import io.mockk.MockKAnnotations
@@ -80,6 +81,9 @@ class FetchAndCacheVerifierDisplayDataImplTest {
     private lateinit var mockEvaluateVeranaTrust: EvaluateVeranaTrust
 
     @MockK
+    private lateinit var mockResolveVtjscIdFromVct: ResolveVtjscIdFromVct
+
+    @MockK
     private lateinit var mockAuthorizationRequest: AuthorizationRequest
 
     @MockK
@@ -101,6 +105,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             initializeActorForScope = mockInitializeActorForScope,
             getAllAnyCredentialsByCredentialId = mockGetAllAnyCredentialsByCredentialId,
             evaluateVeranaTrust = mockEvaluateVeranaTrust,
+            resolveVtjscIdFromVct = mockResolveVtjscIdFromVct,
             actorUpdateGate = ActorUpdateGate(),
         )
 
@@ -501,6 +506,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
                 role = VeranaTrustRole.VERIFIER,
                 did = AUTHENTICATED_DID,
                 vcSchemaIds = setOf(STORED_SCHEMA_ID),
+                vtjscIds = setOf(STORED_SCHEMA_ID),
             )
         }
         val capturedDisplayData = slot<ActorDisplayData>()
@@ -530,6 +536,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
                 role = VeranaTrustRole.VERIFIER,
                 did = AUTHENTICATED_DID,
                 vcSchemaIds = setOf(STORED_SCHEMA_ID, STORED_SCHEMA_ID_2),
+                vtjscIds = setOf(STORED_SCHEMA_ID, STORED_SCHEMA_ID_2),
             )
         }
     }
@@ -545,7 +552,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
         )
 
         coVerify(exactly = 0) { mockGetAllAnyCredentialsByCredentialId(any()) }
-        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
     }
 
     @Test
@@ -559,7 +566,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
         )
 
-        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
         val capturedDisplayData = slot<ActorDisplayData>()
         coVerify {
             mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
@@ -580,7 +587,7 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             veranaTrustContext = VeranaVerifierTrustContext(AUTHENTICATED_DID, CREDENTIAL_ID),
         )
 
-        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
         val capturedDisplayData = slot<ActorDisplayData>()
         coVerify {
             mockInitializeActorForScope(capture(capturedDisplayData), ComponentScope.Verifier)
@@ -618,8 +625,9 @@ class FetchAndCacheVerifierDisplayDataImplTest {
             mockGetAllAnyCredentialsByCredentialId(CREDENTIAL_ID)
         } returns Ok(listOf(mockAnyCredential))
         coEvery {
-            mockEvaluateVeranaTrust(any(), any(), any())
+            mockEvaluateVeranaTrust(any(), any(), any(), any())
         } returns veranaTrustEvidence
+        coEvery { mockResolveVtjscIdFromVct(any(), any()) } answers { secondArg() }
 
         coEvery {
             mockInitializeActorForScope.invoke(any(), componentScope = ComponentScope.Verifier)

@@ -21,6 +21,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
         role: VeranaTrustRole,
         did: String,
         vcSchemaIds: Set<String>,
+        vtjscIds: Set<String>,
     ): VeranaTrustEvidence {
         val sortedSchemaIds = vcSchemaIds.sorted()
         val emptyEvidence = VeranaTrustEvidence(
@@ -39,6 +40,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
         if (!hasValidDid || !hasValidSchemas) {
             return emptyEvidence
         }
+        val sortedVtjscIds = vtjscIds.filter { it.isNotBlank() && it == it.trim() }.sorted()
 
         return try {
             withTimeout(EVALUATION_TIMEOUT_MILLIS) {
@@ -46,7 +48,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
                     emptyEvidence = emptyEvidence,
                     role = role,
                     did = did,
-                    sortedSchemaIds = sortedSchemaIds,
+                    sortedVtjscIds = sortedVtjscIds,
                 )
             }
         } catch (_: TimeoutCancellationException) {
@@ -63,7 +65,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
         emptyEvidence: VeranaTrustEvidence,
         role: VeranaTrustRole,
         did: String,
-        sortedSchemaIds: List<String>,
+        sortedVtjscIds: List<String>,
     ): VeranaTrustEvidence {
         val summary = when (val result = repository.fetchSummary(did)) {
             is VeranaResolverResult.Success -> result.value
@@ -78,13 +80,18 @@ class EvaluateVeranaTrustImpl @Inject constructor(
             return evidenceWithSummary.copy(verdict = VeranaTrustVerdict.UNTRUSTED)
         }
 
+        // No resolvable VTJSC id means the authorization could not be determined, never that it was refused.
+        if (sortedVtjscIds.isEmpty()) {
+            return evidenceWithSummary.copy(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE)
+        }
+
         val authorizations = mutableListOf<VeranaAuthorizationEvidence>()
-        for (schemaId in sortedSchemaIds) {
+        for (vtjscId in sortedVtjscIds) {
             val authorization = when (
                 val result = repository.fetchAuthorization(
                     role = role,
                     did = did,
-                    vcSchemaId = schemaId,
+                    vcSchemaId = vtjscId,
                 )
             ) {
                 is VeranaResolverResult.Success -> result.value
@@ -97,7 +104,7 @@ class EvaluateVeranaTrustImpl @Inject constructor(
                 }
             }
 
-            if (authorization.did != did || authorization.vcSchemaId != schemaId) {
+            if (authorization.did != did || authorization.vcSchemaId != vtjscId) {
                 return evidenceWithSummary.copy(
                     verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE,
                     authorizations = authorizations,

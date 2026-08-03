@@ -1,7 +1,9 @@
 package ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.implementation
 
+import ch.admin.foitt.openid4vc.domain.model.anycredential.AnyCredential
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientMetaData
+import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwt
 import ch.admin.foitt.wallet.platform.actorEnvironment.domain.model.ActorEnvironment
 import ch.admin.foitt.wallet.platform.actorEnvironment.domain.usecase.GetActorEnvironment
 import ch.admin.foitt.wallet.platform.actorMetadata.domain.model.ActorDisplayData
@@ -28,6 +30,7 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.get
 import com.github.michaelbull.result.getOrElse
 import timber.log.Timber
@@ -42,6 +45,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
     private val initializeActorForScope: InitializeActorForScope,
     private val getAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId,
     private val evaluateVeranaTrust: EvaluateVeranaTrust,
+    private val resolveVtjscIdFromVct: ResolveVtjscIdFromVct,
     private val actorUpdateGate: ActorUpdateGate,
 ) : FetchAndCacheVerifierDisplayData {
     override suspend fun invoke(
@@ -168,6 +172,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
                 role = VeranaTrustRole.VERIFIER,
                 did = verifierDid,
                 vcSchemaIds = distinctSchemaIds,
+                vtjscIds = credentials.orEmpty().resolveVtjscIds(),
             )
         } else {
             VeranaTrustEvidence(
@@ -179,6 +184,16 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
                 authorizations = emptyList(),
             )
         }
+    }
+
+    // A single unresolvable credential turns the whole authorization check into could-not-determine.
+    private suspend fun List<AnyCredential>.resolveVtjscIds(): Set<String> {
+        val resolved = map { credential ->
+            (credential as? VcSdJwt)?.credentialSchemaId to ((credential as? VcSdJwt)?.vct ?: credential.vcSchemaId)
+        }
+            .distinct()
+            .map { (credentialSchemaId, vct) -> resolveVtjscIdFromVct(credentialSchemaId, vct) }
+        return if (resolved.any { it == null }) emptySet() else resolved.filterNotNull().toSet()
     }
 
     private fun ClientMetaData.toVerifierName(): List<ActorField<String>> = clientNameList.map { entry ->

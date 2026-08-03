@@ -8,5 +8,6 @@ fun interface EvaluateVeranaTrust {
         role: VeranaTrustRole,
         did: String,
         vcSchemaIds: Set<String>,
+        vtjscIds: Set<String>,
     ): VeranaTrustEvidence
 }

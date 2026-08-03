@@ -57,6 +57,7 @@ class EvaluateVeranaTrustImplTest {
             role = VeranaTrustRole.ISSUER,
             did = DID,
             vcSchemaIds = setOf(SCHEMA_B, SCHEMA_A),
+            vtjscIds = setOf(SCHEMA_B, SCHEMA_A),
         )
 
         assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
@@ -78,6 +79,7 @@ class EvaluateVeranaTrustImplTest {
             role = VeranaTrustRole.VERIFIER,
             did = DID,
             vcSchemaIds = setOf(SCHEMA_A),
+            vtjscIds = setOf(SCHEMA_A),
         )
 
         assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
@@ -94,6 +96,7 @@ class EvaluateVeranaTrustImplTest {
             role = VeranaTrustRole.VERIFIER,
             did = DID,
             vcSchemaIds = setOf(SCHEMA_A, SCHEMA_B),
+            vtjscIds = setOf(SCHEMA_A, SCHEMA_B),
         )
 
         assertEquals(VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED, result.verdict)
@@ -104,7 +107,7 @@ class EvaluateVeranaTrustImplTest {
     fun `Q1 not found is unverified and skips authorization`() = runTest {
         coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.NotFound
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
         assertTrue(result.authorizations.isEmpty())
@@ -115,7 +118,7 @@ class EvaluateVeranaTrustImplTest {
     fun `Q1 unavailable is unavailable and skips authorization`() = runTest {
         coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.Unavailable
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
         coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
@@ -131,7 +134,7 @@ class EvaluateVeranaTrustImplTest {
         summaries.forEach { summary ->
             coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.Success(summary)
 
-            val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+            val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
             assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
         }
@@ -144,7 +147,7 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchSummary(DID)
         } returns VeranaResolverResult.Success(trustedSummary().copy(production = false))
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
         coVerify { repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A) }
@@ -156,7 +159,7 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchSummary(DID)
         } returns VeranaResolverResult.Success(trustedSummary().copy(did = OTHER_DID))
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
         coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
@@ -168,7 +171,7 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_B)
         } returns VeranaResolverResult.Unavailable
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A, SCHEMA_B))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A, SCHEMA_B), setOf(SCHEMA_A, SCHEMA_B))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
     }
@@ -179,7 +182,7 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
         } returns VeranaResolverResult.NotFound
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
     }
@@ -190,7 +193,7 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
         } returns VeranaResolverResult.Success(authorization(SCHEMA_A, did = OTHER_DID))
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
     }
@@ -201,16 +204,16 @@ class EvaluateVeranaTrustImplTest {
             repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
         } returns VeranaResolverResult.Success(authorization(SCHEMA_B))
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
     }
 
     @Test
     fun `blank DID or schema is unverified without resolver access`() = runTest {
-        val blankDid = useCase(VeranaTrustRole.ISSUER, " ", setOf(SCHEMA_A))
-        val blankSchema = useCase(VeranaTrustRole.ISSUER, DID, setOf(" "))
-        val missingSchema = useCase(VeranaTrustRole.ISSUER, DID, emptySet())
+        val blankDid = useCase(VeranaTrustRole.ISSUER, " ", setOf(SCHEMA_A), setOf(SCHEMA_A))
+        val blankSchema = useCase(VeranaTrustRole.ISSUER, DID, setOf(" "), setOf(" "))
+        val missingSchema = useCase(VeranaTrustRole.ISSUER, DID, emptySet(), emptySet())
 
         assertEquals(VeranaTrustVerdict.UNVERIFIED, blankDid.verdict)
         assertEquals(VeranaTrustVerdict.UNVERIFIED, blankSchema.verdict)
@@ -224,6 +227,7 @@ class EvaluateVeranaTrustImplTest {
             role = VeranaTrustRole.ISSUER,
             did = "https://issuer.example",
             vcSchemaIds = setOf(SCHEMA_A),
+            vtjscIds = setOf(SCHEMA_A),
         )
 
         assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
@@ -246,11 +250,21 @@ class EvaluateVeranaTrustImplTest {
                 role = VeranaTrustRole.ISSUER,
                 did = malformedDid,
                 vcSchemaIds = setOf(SCHEMA_A),
+                vtjscIds = setOf(SCHEMA_A),
             )
 
             assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
         }
         confirmVerified(repository)
+    }
+
+    @Test
+    fun `trusted DID without a resolvable vtjscId is unavailable, never refused`() = runTest {
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), emptySet())
+
+        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
+        assertTrue(result.authorizations.isEmpty())
+        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
     }
 
     @Test
@@ -260,7 +274,7 @@ class EvaluateVeranaTrustImplTest {
             VeranaResolverResult.Success(trustedSummary())
         }
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A))
+        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
 
         assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
     }

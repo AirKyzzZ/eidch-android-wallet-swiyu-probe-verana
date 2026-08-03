@@ -26,6 +26,7 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEviden
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import ch.admin.foitt.wallet.util.assertErrorType
 import ch.admin.foitt.wallet.util.assertOk
 import com.github.michaelbull.result.Err
@@ -57,6 +58,9 @@ class FetchAndCacheIssuerDisplayDataImplTest {
 
     @MockK
     private lateinit var mockEvaluateVeranaTrust: EvaluateVeranaTrust
+
+    @MockK
+    private lateinit var mockResolveVtjscIdFromVct: ResolveVtjscIdFromVct
 
     @MockK
     private lateinit var mockCredentialIssuerDisplayRepo: CredentialIssuerDisplayRepo
@@ -91,6 +95,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             getAllAnyCredentialsByCredentialId = mockGetAllAnyCredentialByCredentialId,
             fetchTrustForIssuance = mockFetchTrustForIssuance,
             evaluateVeranaTrust = mockEvaluateVeranaTrust,
+            resolveVtjscIdFromVct = mockResolveVtjscIdFromVct,
             credentialIssuerDisplayRepo = mockCredentialIssuerDisplayRepo,
             getLocalizedDisplay = mockGetLocalizedDisplay,
             fetchNonComplianceData = mockFetchNonComplianceData,
@@ -106,8 +111,9 @@ class FetchAndCacheIssuerDisplayDataImplTest {
 
         coEvery { mockFetchTrustForIssuance(any(), any()) } returns mockTrustedTrustCheckResult
         coEvery {
-            mockEvaluateVeranaTrust(any(), any(), any())
+            mockEvaluateVeranaTrust(any(), any(), any(), any())
         } returns veranaTrustEvidence
+        coEvery { mockResolveVtjscIdFromVct(any(), any()) } answers { secondArg() }
 
         coEvery {
             mockCredentialIssuerDisplayRepo.getIssuerDisplays(credentialId = any())
@@ -159,6 +165,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
                 role = VeranaTrustRole.ISSUER,
                 did = ISSUER_DID,
                 vcSchemaIds = setOf(VC_SCHEMA_ID),
+                vtjscIds = setOf(VC_SCHEMA_ID),
             )
             mockCredentialIssuerDisplayRepo.getIssuerDisplays(credentialId = CREDENTIAL_ID)
             mockIdentityTrustStatement.entityName
@@ -311,6 +318,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
                 role = VeranaTrustRole.ISSUER,
                 did = ISSUER_DID,
                 vcSchemaIds = setOf(VC_SCHEMA_ID, VC_SCHEMA_ID_2),
+                vtjscIds = setOf(VC_SCHEMA_ID, VC_SCHEMA_ID_2),
             )
         }
     }
@@ -326,7 +334,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
 
         useCase(CREDENTIAL_ID).assertOk()
 
-        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
         coVerify {
             mockCacheIssuerDisplayData(
                 trustCheckResult = any(),
@@ -343,7 +351,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
 
         useCase(CREDENTIAL_ID).assertOk()
 
-        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any()) }
+        coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
     }
 
     private companion object {
