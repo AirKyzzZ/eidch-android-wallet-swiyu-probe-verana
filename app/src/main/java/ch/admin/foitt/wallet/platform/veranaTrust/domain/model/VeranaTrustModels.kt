@@ -4,10 +4,6 @@ import kotlinx.serialization.Serializable
 
 const val VeranaTrustResolverUrl = "https://resolver.testnet.verana.network"
 
-// [UW-CFG-2] label source; never the resolver's production flag, which is wrong
-// on testnet (verana-resolver#148).
-const val VeranaNetworkProduction = false
-
 @Serializable
 enum class VeranaTrustRole {
     ISSUER,

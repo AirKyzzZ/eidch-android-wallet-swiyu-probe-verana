@@ -34,7 +34,6 @@ import ch.admin.foitt.wallet.platform.ssi.domain.model.SsiError
 import ch.admin.foitt.wallet.platform.ssi.domain.usecase.DeleteCredential
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.utils.openLink
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
 import com.github.michaelbull.result.annotation.UnsafeResultValueAccess
 import com.github.michaelbull.result.onFailure
@@ -216,12 +215,7 @@ class CredentialOfferViewModel @AssistedInject constructor(
 
     fun onVeranaTrustDetails() {
         val evidence = actorDisplayData.value.veranaTrustEvidence ?: return
-        if (
-            evidence.verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED ||
-            evidence.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
-        ) {
-            navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
-        }
+        navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
     }
 
     fun onRetryVeranaTrust() {

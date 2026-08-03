@@ -45,7 +45,6 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.utils.launchWithDelayedLoading
 import ch.admin.foitt.wallet.platform.utils.openLink
 import ch.admin.foitt.wallet.platform.utils.trackCompletion
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
 import com.github.michaelbull.result.mapBoth
@@ -260,12 +259,7 @@ class PresentationRequestViewModel @AssistedInject constructor(
 
     fun onVeranaTrustDetails() {
         val evidence = verifierDisplayData.value.veranaTrustEvidence ?: return
-        if (
-            evidence.verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED ||
-            evidence.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
-        ) {
-            navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
-        }
+        navManager.navigateTo(Destination.VeranaTrustDetailsScreen(evidence))
     }
 
     fun onRetryVeranaTrust() {

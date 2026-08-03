@@ -27,6 +27,7 @@ import ch.admin.foitt.wallet.R
 import ch.admin.foitt.wallet.platform.composables.Buttons
 import ch.admin.foitt.wallet.platform.scaffold.presentation.LocalScaffoldPaddings
 import ch.admin.foitt.wallet.platform.utils.openLink
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustCredentialUiState
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustDetailsLoadState
@@ -41,6 +42,7 @@ fun VeranaTrustDetailsScreen(
     val context = LocalContext.current
     VeranaTrustDetailsContent(
         state = viewModel.uiState.collectAsStateWithLifecycle().value,
+        cardEvidence = viewModel.cardEvidence.collectAsStateWithLifecycle().value,
         onRetry = viewModel::onRetry,
         onOpenLink = context::openLink,
     )
@@ -49,6 +51,7 @@ fun VeranaTrustDetailsScreen(
 @Composable
 private fun VeranaTrustDetailsContent(
     state: VeranaTrustDetailsLoadState,
+    cardEvidence: VeranaTrustEvidence,
     onRetry: () -> Unit,
     onOpenLink: (String) -> Unit,
 ) {
@@ -78,6 +81,14 @@ private fun VeranaTrustDetailsContent(
                 WalletTexts.TitleScreen(text = stringResource(trust.titleResId))
                 Spacer(Modifier.height(Sizes.s02))
                 WalletTexts.BodyLarge(text = stringResource(trust.descriptionResId))
+            }
+
+            item {
+                VeranaTrustCard(
+                    evidence = cardEvidence,
+                    onOpenDetails = null,
+                    onRetry = onRetry,
+                )
             }
 
             item {

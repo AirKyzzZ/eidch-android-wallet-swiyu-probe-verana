@@ -313,6 +313,8 @@ private fun ContentList(
                     isLoading = isVeranaTrustLoading,
                     onOpenDetails = onVeranaTrustDetails,
                     onRetry = onRetryVeranaTrust,
+                    partyName = verifierUiState.name,
+                    credentialName = presentationRequestUiState.credentialCardState.title,
                     modifier = Modifier.padding(horizontal = Sizes.s04, vertical = Sizes.s02),
                 )
             }

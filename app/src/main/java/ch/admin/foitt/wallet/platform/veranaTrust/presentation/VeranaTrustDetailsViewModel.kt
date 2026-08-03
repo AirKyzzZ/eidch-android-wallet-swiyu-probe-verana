@@ -42,6 +42,9 @@ class VeranaTrustDetailsViewModel @AssistedInject constructor(
     )
     val uiState = _uiState.asStateFlow()
 
+    private val _cardEvidence = MutableStateFlow(evidence)
+    val cardEvidence = _cardEvidence.asStateFlow()
+
     init {
         loadDetails()
     }
@@ -60,6 +63,7 @@ class VeranaTrustDetailsViewModel @AssistedInject constructor(
             _uiState.value = when (val result = fetchVeranaTrustDetails(evidence)) {
                 is VeranaResolverResult.Success -> {
                     if (result.value.summary == evidence.summary) {
+                        _cardEvidence.value = evidence.copy(credentials = result.value.credentials)
                         VeranaTrustDetailsLoadState.Loaded(
                             mapVeranaTrustUiState(evidence, result.value)
                         )

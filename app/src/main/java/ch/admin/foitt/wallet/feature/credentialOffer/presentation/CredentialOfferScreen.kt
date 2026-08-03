@@ -225,6 +225,8 @@ private fun CompactContent(
                     isLoading = isVeranaTrustLoading,
                     onOpenDetails = onVeranaTrustDetails,
                     onRetry = onRetryVeranaTrust,
+                    partyName = credentialOffer.issuer.name,
+                    credentialName = credentialOffer.credential.title,
                     modifier = Modifier.padding(horizontal = Sizes.s04, vertical = Sizes.s02),
                 )
             }
@@ -377,6 +379,8 @@ private fun DetailsWithHeader(
                     isLoading = isVeranaTrustLoading,
                     onOpenDetails = onVeranaTrustDetails,
                     onRetry = onRetryVeranaTrust,
+                    partyName = credentialOffer.issuer.name,
+                    credentialName = credentialOffer.credential.title,
                     modifier = Modifier.padding(horizontal = Sizes.s04, vertical = Sizes.s02),
                 )
             }
