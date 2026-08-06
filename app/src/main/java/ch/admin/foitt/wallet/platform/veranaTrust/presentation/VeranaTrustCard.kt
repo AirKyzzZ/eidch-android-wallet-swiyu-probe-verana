@@ -92,7 +92,7 @@ fun VeranaTrustCard(
             verticalArrangement = Arrangement.spacedBy(Sizes.s04),
         ) {
             if (isLoading || evidence == null) {
-                LoadingRow()
+                LoadingRow(did = evidence?.did)
             } else {
                 CardContent(
                     evidence = evidence,
@@ -202,22 +202,27 @@ private fun CardContent(
 }
 
 @Composable
-private fun LoadingRow() = Row(
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(Sizes.s03),
+private fun LoadingRow(did: String?) = Column(
+    verticalArrangement = Arrangement.spacedBy(Sizes.s04),
 ) {
-    CircularProgressIndicator(
-        modifier = Modifier.size(Sizes.s05),
-        color = CardPalette.grey500,
-        strokeWidth = Sizes.line02,
+    did?.let {
+        DidRow(did = it, verdict = CardVerdict.RESOLVING, isTestnet = false)
+    } ?: Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Sizes.s03),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(Sizes.s05),
+            color = CardPalette.grey500,
+            strokeWidth = Sizes.line02,
+        )
+        Spacer(Modifier.weight(1f))
+        VeranaMark(size = 19.dp)
+    }
+    VerdictPill(
+        verdict = CardVerdict.RESOLVING,
+        note = "Checking the Verana public registry…",
     )
-    Text(
-        text = "Resolving trust credentials…",
-        style = WalletTheme.typography.bodyMedium,
-        color = CardPalette.grey600,
-    )
-    Spacer(Modifier.weight(1f))
-    VeranaMark(size = 19.dp)
 }
 
 @Composable
@@ -532,7 +537,7 @@ private fun VerdictPill(
             text = it,
             style = WalletTheme.typography.bodySmall,
             color = when (verdict) {
-                CardVerdict.TRUSTED, CardVerdict.UNVERIFIED -> CardPalette.grey600
+                CardVerdict.RESOLVING, CardVerdict.TRUSTED, CardVerdict.UNVERIFIED -> CardPalette.grey600
                 CardVerdict.PARTIAL, CardVerdict.UNTRUSTED -> CardPalette.dangerDark
             },
         )
@@ -751,6 +756,7 @@ private enum class CardVerdict(
     val label: String,
     val color: Color,
 ) {
+    RESOLVING("CHECKING…", CardPalette.grey500),
     TRUSTED("TRUSTED", CardPalette.positive),
     PARTIAL("PARTIAL", CardPalette.warning),
     UNTRUSTED("UNTRUSTED", CardPalette.danger),
@@ -811,7 +817,7 @@ private fun verdictNote(
 private fun CardVerdict.toEcsVerdict(): EcsVerdict = when (this) {
     CardVerdict.TRUSTED -> EcsVerdict.TRUSTED
     CardVerdict.PARTIAL -> EcsVerdict.PARTIAL
-    CardVerdict.UNTRUSTED, CardVerdict.UNVERIFIED -> EcsVerdict.UNTRUSTED
+    CardVerdict.RESOLVING, CardVerdict.UNTRUSTED, CardVerdict.UNVERIFIED -> EcsVerdict.UNTRUSTED
 }
 
 private fun VeranaTrustEvidence.askGranted(): Boolean? = when {
