@@ -15,6 +15,7 @@ data class ClientIdentifier(
     enum class ClientIdPrefix(val value: String) {
         DecentralizedIdentifier("decentralized_identifier"),
         VerifierAttestationJwt("verifier_attestation"),
+        X509Hash("x509_hash"),
     }
 
     companion object {
@@ -49,6 +50,7 @@ data class ClientIdentifier(
         private fun clientIdPrefixFromString(clientIdPrefixString: String?): ClientIdPrefix = when (clientIdPrefixString) {
             "decentralized_identifier" -> ClientIdPrefix.DecentralizedIdentifier
             "verifier_attestation" -> ClientIdPrefix.VerifierAttestationJwt
+            "x509_hash" -> ClientIdPrefix.X509Hash
             // Acc. swiss profile verification section 5.9.2 use decentralized_identifier as fallback
             else -> ClientIdPrefix.DecentralizedIdentifier
         }

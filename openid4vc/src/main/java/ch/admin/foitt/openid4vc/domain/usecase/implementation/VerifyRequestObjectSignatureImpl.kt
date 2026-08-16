@@ -1,6 +1,7 @@
 package ch.admin.foitt.openid4vc.domain.usecase.implementation
 
 import ch.admin.foitt.didResolver.domain.DidResolverHelper
+import ch.admin.foitt.openid4vc.domain.model.SigningAlgorithm
 import ch.admin.foitt.openid4vc.domain.model.anycredential.Validity
 import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
 import ch.admin.foitt.openid4vc.domain.model.jwt.Jwt
@@ -12,6 +13,9 @@ import ch.admin.foitt.openid4vc.domain.model.presentationRequest.RequestObjectVe
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwtError
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VerifyRequestObjectSignatureError
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.toVerifyRequestObjectSignatureError
+import ch.admin.foitt.openid4vc.domain.model.x509.sha256Thumbprint
+import ch.admin.foitt.openid4vc.domain.model.x509.toP256Jwk
+import ch.admin.foitt.openid4vc.domain.model.x509.x5cLeafCertificate
 import ch.admin.foitt.openid4vc.domain.usecase.VerifyRequestObjectSignature
 import ch.admin.foitt.openid4vc.domain.usecase.jwt.VerifyJwtSignature
 import ch.admin.foitt.openid4vc.domain.usecase.jwt.VerifyJwtSignatureFromDid
@@ -52,6 +56,14 @@ internal class VerifyRequestObjectSignatureImpl @Inject constructor(
                 RequestObjectVerificationOutcome.DID_PATH
             }
 
+            ClientIdentifier.ClientIdPrefix.X509Hash -> {
+                verifyWithX509Hash(
+                    jwt = jwt,
+                    clientIdentifier = clientIdentifier,
+                ).bind()
+                RequestObjectVerificationOutcome.X509_HASH_PATH
+            }
+
             ClientIdentifier.ClientIdPrefix.VerifierAttestationJwt -> {
                 verifyWithAttestation(
                     jwt = jwt,
@@ -81,6 +93,26 @@ internal class VerifyRequestObjectSignatureImpl @Inject constructor(
 
         verifyJwtSignatureFromDid(kid = jwtKid, jwt = jwt)
             .mapError(VerifyJwtSignatureFromDidError::toVerifyRequestObjectSignatureError)
+            .bind()
+    }
+
+    private suspend fun verifyWithX509Hash(
+        jwt: Jwt,
+        clientIdentifier: ClientIdentifier,
+    ): Result<Unit, VerifyRequestObjectSignatureError> = coroutineBinding {
+        val certificateKey = runSuspendCatching {
+            check(jwt.algorithm == SigningAlgorithm.ES256.stdName) { "request object must be signed with ES256" }
+
+            val leafCertificate = jwt.x5cLeafCertificate()
+            check(leafCertificate.sha256Thumbprint() == clientIdentifier.clientId) {
+                "x5c leaf certificate thumbprint does not match clientId"
+            }
+
+            leafCertificate.toP256Jwk()
+        }.mapError { VcSdJwtError.InvalidRequestObject }.bind()
+
+        verifyJwtSignature(jwt = jwt, publicKey = certificateKey)
+            .mapError(VerifyJwtSignatureError::toVerifyRequestObjectSignatureError)
             .bind()
     }
 

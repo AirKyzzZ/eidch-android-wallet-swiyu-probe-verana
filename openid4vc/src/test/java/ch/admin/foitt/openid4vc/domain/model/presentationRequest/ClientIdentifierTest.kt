@@ -42,6 +42,7 @@ class ClientIdentifierTest {
         val input = mapOf(
             "decentralized_identifier:did:example:123" to ClientIdentifier.ClientIdPrefix.DecentralizedIdentifier,
             "verifier_attestation:attestationSubClaim" to ClientIdentifier.ClientIdPrefix.VerifierAttestationJwt,
+            "x509_hash:HAUxCg3Cq8bxK-8xcNTJoR2JYUYaJnvyKhJDQb8fFbg" to ClientIdentifier.ClientIdPrefix.X509Hash,
             "did:example:123" to ClientIdentifier.ClientIdPrefix.DecentralizedIdentifier,
             "unsupportedPrefix:clientId" to ClientIdentifier.ClientIdPrefix.DecentralizedIdentifier,
             "other" to ClientIdentifier.ClientIdPrefix.DecentralizedIdentifier,
@@ -65,6 +66,7 @@ class ClientIdentifierTest {
         val input = listOf(
             "decentralized_identifier:",
             "verifier_attestation:",
+            "x509_hash:",
         )
 
         return input.map { clientId ->

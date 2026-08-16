@@ -86,7 +86,9 @@ class ValidatePresentationRequestImpl @Inject constructor(
 
         runSuspendCatching {
             check(jwt.algorithm == SigningAlgorithm.ES256.stdName)
-            if (verificationProcessType == VerificationProcessType.NETWORK) {
+            if (verificationProcessType == VerificationProcessType.NETWORK &&
+                clientIdentifier?.clientIdPrefix != ClientIdentifier.ClientIdPrefix.X509Hash
+            ) {
                 checkNotNull(jwt.keyId) { "keyId is missing" }
             }
             check(jwt.jwtValidity == Validity.Valid) { "jwt is not yet valid or expired" }
@@ -134,7 +136,9 @@ class ValidatePresentationRequestImpl @Inject constructor(
             verifierAttestationTrusted = when (verificationOutcome) {
                 RequestObjectVerificationOutcome.ATTESTATION_TRUSTED -> true
                 RequestObjectVerificationOutcome.ATTESTATION_UNTRUSTED -> false
-                RequestObjectVerificationOutcome.DID_PATH, null -> null
+                RequestObjectVerificationOutcome.DID_PATH,
+                RequestObjectVerificationOutcome.X509_HASH_PATH,
+                null -> null
             },
             authenticatedVerifierDid = getAuthenticatedVerifierDid(
                 verificationProcessType = verificationProcessType,
