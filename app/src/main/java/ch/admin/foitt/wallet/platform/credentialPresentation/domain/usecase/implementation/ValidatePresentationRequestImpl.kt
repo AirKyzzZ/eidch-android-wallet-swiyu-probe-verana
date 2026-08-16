@@ -3,11 +3,15 @@ package ch.admin.foitt.wallet.platform.credentialPresentation.domain.usecase.imp
 import ch.admin.foitt.openid4vc.domain.model.SigningAlgorithm
 import ch.admin.foitt.openid4vc.domain.model.anycredential.Validity
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.CredentialFormat
+import ch.admin.foitt.openid4vc.domain.model.jwt.Jwt
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientIdentifier
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.RequestObject
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.RequestObjectVerificationOutcome
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwtError
+import ch.admin.foitt.openid4vc.domain.model.x509.didSubjectAlternativeName
+import ch.admin.foitt.openid4vc.domain.model.x509.dnsSubjectAlternativeNames
+import ch.admin.foitt.openid4vc.domain.model.x509.x5cLeafCertificate
 import ch.admin.foitt.openid4vc.domain.usecase.VerifyRequestObjectSignature
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.CredentialPresentationError
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.PresentationRequestWithRaw
@@ -25,6 +29,7 @@ import com.github.michaelbull.result.coroutines.coroutineBinding
 import com.github.michaelbull.result.coroutines.runSuspendCatching
 import com.github.michaelbull.result.mapError
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.URI
 import javax.inject.Inject
 
 class ValidatePresentationRequestImpl @Inject constructor(
@@ -144,6 +149,8 @@ class ValidatePresentationRequestImpl @Inject constructor(
                 verificationProcessType = verificationProcessType,
                 verificationOutcome = verificationOutcome,
                 clientIdentifier = clientIdentifier,
+                jwt = jwt,
+                responseUri = responseUri,
             ),
         )
     }
@@ -173,15 +180,37 @@ class ValidatePresentationRequestImpl @Inject constructor(
         verificationProcessType: VerificationProcessType,
         verificationOutcome: RequestObjectVerificationOutcome?,
         clientIdentifier: ClientIdentifier?,
+        jwt: Jwt,
+        responseUri: String?,
     ): String? {
-        val didPathWasVerified = environmentSetupRepository.verifyRequestObjectSignature &&
-            verificationProcessType == VerificationProcessType.NETWORK &&
-            verificationOutcome == RequestObjectVerificationOutcome.DID_PATH
+        if (!environmentSetupRepository.verifyRequestObjectSignature ||
+            verificationProcessType != VerificationProcessType.NETWORK
+        ) {
+            return null
+        }
 
-        return clientIdentifier?.clientId?.takeIf { clientId ->
-            didPathWasVerified && clientId.isNotBlank() && clientId.startsWith("did:")
+        return when (verificationOutcome) {
+            RequestObjectVerificationOutcome.DID_PATH -> clientIdentifier?.clientId?.takeIf { clientId ->
+                clientId.isNotBlank() && clientId.startsWith(DID_PREFIX)
+            }
+
+            RequestObjectVerificationOutcome.X509_HASH_PATH -> getCertificateVerifierDid(
+                jwt = jwt,
+                responseUri = responseUri,
+            )
+
+            else -> null
         }
     }
+
+    private fun getCertificateVerifierDid(jwt: Jwt, responseUri: String?): String? = runCatching {
+        val responseHost = checkNotNull(URI(responseUri).host)
+        val leafCertificate = jwt.x5cLeafCertificate()
+        check(leafCertificate.dnsSubjectAlternativeNames().any { it.equals(responseHost, ignoreCase = true) }) {
+            "x5c leaf certificate does not name the response_uri host"
+        }
+        leafCertificate.didSubjectAlternativeName()
+    }.getOrNull()
 
     @Suppress("CyclomaticComplexMethod")
     private fun validateAuthorizationRequest(
@@ -227,5 +256,6 @@ class ValidatePresentationRequestImpl @Inject constructor(
         const val CLAIM_RESPONSE_URI = "response_uri"
         const val CLAIM_AUDIENCE = "aud"
         const val CLAIM_TRANSACTION_DATA = "transaction_data"
+        const val DID_PREFIX = "did:"
     }
 }

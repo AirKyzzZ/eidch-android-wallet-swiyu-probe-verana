@@ -8,6 +8,10 @@ import com.nimbusds.jose.util.X509CertUtils
 import java.security.cert.X509Certificate
 import java.security.interfaces.ECPublicKey
 
+private const val UriSubjectAlternativeName = 6
+private const val DnsSubjectAlternativeName = 2
+private const val DidPrefix = "did:"
+
 fun Jwt.x5cLeafCertificate(): X509Certificate {
     val encodedLeafCertificate = checkNotNull(signedJwt.header.x509CertChain?.firstOrNull()) { "x5c header is missing" }
     return X509CertUtils.parseWithException(encodedLeafCertificate.decode()).also(X509Certificate::checkValidity)
@@ -27,3 +31,15 @@ fun X509Certificate.toP256Jwk(): Jwk {
         kty = key.keyType.value,
     )
 }
+
+fun X509Certificate.didSubjectAlternativeName(): String? = subjectAlternativeNameValues(UriSubjectAlternativeName)
+    .filter { it.startsWith(DidPrefix) }
+    .singleOrNull()
+
+fun X509Certificate.dnsSubjectAlternativeNames(): Set<String> =
+    subjectAlternativeNameValues(DnsSubjectAlternativeName).toSet()
+
+private fun X509Certificate.subjectAlternativeNameValues(type: Int): List<String> = subjectAlternativeNames.orEmpty()
+    .mapNotNull { alternativeName ->
+        (alternativeName.getOrNull(1) as? String)?.takeIf { alternativeName.getOrNull(0) == type }
+    }
