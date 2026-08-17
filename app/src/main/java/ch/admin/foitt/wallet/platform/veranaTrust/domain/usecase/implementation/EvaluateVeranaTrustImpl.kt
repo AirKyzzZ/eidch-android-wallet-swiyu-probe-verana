@@ -77,7 +77,10 @@ class EvaluateVeranaTrustImpl @Inject constructor(
 
         val evidenceWithSummary = emptyEvidence.copy(summary = summary)
         if (!summary.isTrustedDid(did)) {
-            return evidenceWithSummary.copy(verdict = VeranaTrustVerdict.UNTRUSTED)
+            return evidenceWithSummary.copy(
+                verdict = VeranaTrustVerdict.UNTRUSTED,
+                authorizations = knownAuthorizations(role, did, sortedVtjscIds),
+            )
         }
 
         // No resolvable VTJSC id means the authorization could not be determined, never that it was refused.
@@ -122,6 +125,18 @@ class EvaluateVeranaTrustImpl @Inject constructor(
             verdict = verdict,
             authorizations = authorizations,
         )
+    }
+
+    // Gathered only so an untrusted counterparty still shows its accreditation line; the verdict
+    // stays UNTRUSTED whatever this returns, so a failed lookup can never soften it.
+    private suspend fun knownAuthorizations(
+        role: VeranaTrustRole,
+        did: String,
+        sortedVtjscIds: List<String>,
+    ): List<VeranaAuthorizationEvidence> = sortedVtjscIds.mapNotNull { vtjscId ->
+        val result = repository.fetchAuthorization(role = role, did = did, vcSchemaId = vtjscId)
+        (result as? VeranaResolverResult.Success)?.value
+            ?.takeIf { it.did == did && it.vcSchemaId == vtjscId }
     }
 
     private fun VeranaTrustSummary.isTrustedDid(expectedDid: String): Boolean =

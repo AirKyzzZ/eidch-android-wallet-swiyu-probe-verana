@@ -823,6 +823,7 @@ private fun CardVerdict.toEcsVerdict(): EcsVerdict = when (this) {
 private fun VeranaTrustEvidence.askGranted(): Boolean? = when {
     verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED && authorizations.isNotEmpty() -> true
     verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED -> false
+    authorizations.isNotEmpty() -> authorizations.all { it.authorized }
     else -> null
 }
 
