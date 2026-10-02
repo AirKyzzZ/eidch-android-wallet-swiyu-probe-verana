@@ -95,7 +95,7 @@ private fun VeranaTrustDetailsContent(
 
             item {
                 DetailsSection(title = stringResource(R.string.verana_trust_credential_types)) {
-                    DetailRow(stringResource(R.string.verana_trust_type), evidence.vct ?: NOT_AVAILABLE)
+                    DetailRow(stringResource(R.string.verana_trust_type), evidence.vct ?: NotAvailable)
                     evidence.accreditation?.credentialName?.let {
                         DetailRow(stringResource(R.string.verana_trust_name), it)
                     }
@@ -186,7 +186,7 @@ private fun AccreditationSection(
         when (accreditation?.status) {
             VeranaAccreditationStatus.GRANTED -> stringResource(R.string.verana_trust_yes)
             VeranaAccreditationStatus.REFUSED -> stringResource(R.string.verana_trust_no)
-            VeranaAccreditationStatus.UNDETERMINED, null -> NOT_AVAILABLE
+            VeranaAccreditationStatus.UNDETERMINED, null -> NotAvailable
         },
     )
     accreditation?.let {
@@ -265,4 +265,4 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
-private const val NOT_AVAILABLE = "—"
+private const val NotAvailable = "—"

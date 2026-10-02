@@ -126,7 +126,17 @@ class ResolveVeranaTrustImplTest {
         const val DID = "did:webvh:QmService:service.example"
         const val TRUSTED_ECOSYSTEM = "did:webvh:QmEcs:ecs.example"
         const val ECOSYSTEM_ID = 3L
-        val DEVNET = VeranaNetwork(id = "vna-devnet-1", name = "Devnet", indexerUrl = "https://idx.devnet.example", production = false)
-        val TESTNET = VeranaNetwork(id = "vna-testnet-1", name = "Testnet", indexerUrl = "https://idx.testnet.example", production = false)
+        val DEVNET = VeranaNetwork(
+            id = "vna-devnet-1",
+            name = "Devnet",
+            indexerUrl = "https://idx.devnet.example",
+            production = false,
+        )
+        val TESTNET = VeranaNetwork(
+            id = "vna-testnet-1",
+            name = "Testnet",
+            indexerUrl = "https://idx.testnet.example",
+            production = false,
+        )
     }
 }

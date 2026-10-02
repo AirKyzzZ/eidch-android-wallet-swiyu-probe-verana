@@ -110,8 +110,17 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
         val vcts = vcSdJwts.map { it?.vct }.distinct()
         val certificateKeys = vcSdJwts.map { credential -> credential?.takeIf { it.isX5cIssuerKey }?.x5cPublicKey }.distinct()
 
-        if (issuers.size != 1 || vcts.size != 1 || certificateKeys.size != 1) {
-            return VeranaTrustEvidence(
+        val isSingleCounterparty = issuers.size == 1 && vcts.size == 1 && certificateKeys.size == 1
+
+        return if (isSingleCounterparty) {
+            evaluateVeranaTrust(
+                role = VeranaTrustRole.ISSUER,
+                did = issuerDid,
+                vct = vcts.single(),
+                certificateKey = certificateKeys.single(),
+            )
+        } else {
+            VeranaTrustEvidence(
                 role = VeranaTrustRole.ISSUER,
                 did = issuerDid,
                 vct = vcts.singleOrNull(),
@@ -119,12 +128,6 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
                 accreditation = null,
             )
         }
-        return evaluateVeranaTrust(
-            role = VeranaTrustRole.ISSUER,
-            did = issuerDid,
-            vct = vcts.single(),
-            certificateKey = certificateKeys.single(),
-        )
     }
 
     private companion object {

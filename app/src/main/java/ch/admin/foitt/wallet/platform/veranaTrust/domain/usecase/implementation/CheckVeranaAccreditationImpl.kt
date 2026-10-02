@@ -53,7 +53,22 @@ class CheckVeranaAccreditationImpl(
         val vtjscId = (typeMetadata as? JsonObject)?.string("relatedJsonSchemaCredentialId")?.takeIf { it.isHttpsUrl() }
             ?: return refused(VeranaAccreditationReason.NO_VERANA_SCHEMA, credentialName)
 
-        val vtjsc = (documentRepository.fetchJson(vtjscId) ?: return null) as? JsonObject
+        val vtjsc = documentRepository.fetchJson(vtjscId) ?: return null
+        return checkSchemaCredential(
+            did = did,
+            role = role,
+            vtjsc = vtjsc as? JsonObject,
+            credentialName = credentialName,
+        )
+    }
+
+    @Suppress("ReturnCount")
+    private suspend fun checkSchemaCredential(
+        did: String,
+        role: VeranaTrustRole,
+        vtjsc: JsonObject?,
+        credentialName: String?,
+    ): VeranaAccreditation? {
         val vtjscIssuer = vtjsc?.let(DataIntegrity::issuerOf)
         if (vtjsc == null || vtjscIssuer == null) {
             return refused(VeranaAccreditationReason.SCHEMA_CREDENTIAL_MALFORMED, credentialName)
@@ -65,6 +80,23 @@ class CheckVeranaAccreditationImpl(
 
         val schemaRef = parseSchemaRef(vtjsc.jsonSchemaRef())
             ?: return refused(VeranaAccreditationReason.UNKNOWN_NETWORK, credentialName)
+        return checkParticipant(
+            did = did,
+            role = role,
+            schemaRef = schemaRef,
+            vtjscIssuer = vtjscIssuer,
+            credentialName = credentialName,
+        )
+    }
+
+    @Suppress("ReturnCount")
+    private suspend fun checkParticipant(
+        did: String,
+        role: VeranaTrustRole,
+        schemaRef: SchemaRef,
+        vtjscIssuer: String,
+        credentialName: String?,
+    ): VeranaAccreditation? {
         val (ecosystemDid, authorized) = coroutineScope {
             val ecosystemDid = async { schemaEcosystemDid(schemaRef) }
             val authorized = async {

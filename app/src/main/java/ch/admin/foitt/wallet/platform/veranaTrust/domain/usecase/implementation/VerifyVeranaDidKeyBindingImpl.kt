@@ -35,7 +35,9 @@ class VerifyVeranaDidKeyBindingImpl @Inject constructor(
     private fun VeranaVerificationMethod.hasP256Key(key: Jwk): Boolean {
         val jwk = publicKeyJwk ?: return false
         fun field(name: String) = (jwk[name] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
-        if (key.kty != EC || key.crv != P_256 || field("kty") != EC || field("crv") != P_256) return false
+        val presentedIsP256 = key.kty == EC && key.crv == P_256
+        val publishedIsP256 = field("kty") == EC && field("crv") == P_256
+        if (!presentedIsP256 || !publishedIsP256) return false
         return sameCoordinate(field("x"), key.x) && sameCoordinate(field("y"), key.y)
     }
 

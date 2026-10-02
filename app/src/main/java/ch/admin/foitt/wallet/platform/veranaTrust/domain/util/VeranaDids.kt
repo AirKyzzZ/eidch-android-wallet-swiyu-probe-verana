@@ -25,15 +25,17 @@ object VeranaDids {
             did.startsWith(DID_WEB) -> did.removePrefix(DID_WEB).split(':') to "did.json"
             else -> return null
         }
-        val segments = runCatching { identifier.map { URLDecoder.decode(it, Charsets.UTF_8.name()) } }.getOrNull() ?: return null
-        val host = segments.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        val path = segments.drop(1)
-        return if (path.isEmpty()) {
-            "https://$host/.well-known/$fileName"
-        } else {
-            "https://$host/${path.joinToString("/")}/$fileName"
-        }
+        return decodeSegments(identifier)
+            ?.takeIf { segments -> segments.firstOrNull()?.isNotBlank() == true }
+            ?.let { segments ->
+                val path = segments.drop(1).joinToString(separator = "") { "$it/" }.ifEmpty { ".well-known/" }
+                "https://${segments.first()}/$path$fileName"
+            }
     }
+
+    private fun decodeSegments(segments: List<String>): List<String>? = runCatching {
+        segments.map { URLDecoder.decode(it, Charsets.UTF_8.name()) }
+    }.getOrNull()
 
     fun lastLogState(log: String): JsonElement? = log.lineSequence()
         .lastOrNull { it.isNotBlank() }

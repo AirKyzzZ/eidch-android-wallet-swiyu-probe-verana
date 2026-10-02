@@ -35,19 +35,10 @@ object DataIntegrity {
 
     @Suppress("ReturnCount")
     fun verifyEddsaJcs2022(document: JsonObject, issuerDocument: VeranaDidDocument): Boolean {
-        val proof = document[PROOF] as? JsonObject ?: return false
+        val proof = (document[PROOF] as? JsonObject)?.takeIf { it.isEddsaJcs2022AssertionProof() } ?: return false
         val unsecured = JsonObject(document - PROOF)
-        val proofValue = proof.string(PROOF_VALUE)
-        if (
-            proof.string("type") != "DataIntegrityProof" ||
-            proof.string("cryptosuite") != "eddsa-jcs-2022" ||
-            proof.string("proofPurpose") != "assertionMethod" ||
-            proofValue == null ||
-            proofValue.firstOrNull() != MULTIBASE_BASE58BTC ||
-            issuerOf(unsecured) != issuerDocument.id
-        ) {
-            return false
-        }
+        val proofValue = proof.string(PROOF_VALUE)?.takeIf { it.firstOrNull() == MULTIBASE_BASE58BTC } ?: return false
+        if (issuerOf(unsecured) != issuerDocument.id) return false
 
         val verificationMethod = proof.string("verificationMethod")
         val publicKey = issuerDocument.assertionMethods
@@ -68,22 +59,26 @@ object DataIntegrity {
         }.getOrDefault(false)
     }
 
-    private fun VeranaVerificationMethod.ed25519PublicKey(): ByteArray? {
-        val multibase = publicKeyMultibase
-        if (multibase != null && multibase.firstOrNull() == MULTIBASE_BASE58BTC) {
-            val key = runCatching { Base58Btc.decode(multibase.substring(1)) }.getOrNull() ?: return null
-            val hasEd25519Prefix = key.size == ED25519_MULTICODEC.size + ED25519_KEY_LENGTH &&
+    private fun JsonObject.isEddsaJcs2022AssertionProof(): Boolean =
+        string("type") == "DataIntegrityProof" &&
+            string("cryptosuite") == "eddsa-jcs-2022" &&
+            string("proofPurpose") == "assertionMethod"
+
+    private fun VeranaVerificationMethod.ed25519PublicKey(): ByteArray? =
+        publicKeyMultibase?.let(::ed25519FromMultibase) ?: publicKeyJwk?.let(::ed25519FromJwk)
+
+    private fun ed25519FromMultibase(multibase: String): ByteArray? = multibase
+        .takeIf { it.firstOrNull() == MULTIBASE_BASE58BTC }
+        ?.let { runCatching { Base58Btc.decode(it.substring(1)) }.getOrNull() }
+        ?.takeIf { key ->
+            key.size == ED25519_MULTICODEC.size + ED25519_KEY_LENGTH &&
                 key.copyOfRange(0, ED25519_MULTICODEC.size).contentEquals(ED25519_MULTICODEC)
-            return if (hasEd25519Prefix) key.copyOfRange(ED25519_MULTICODEC.size, key.size) else null
         }
-        val jwk = publicKeyJwk ?: return null
-        val x = jwk.string("x")
-        return if (jwk.string("kty") == "OKP" && jwk.string("crv") == "Ed25519" && x != null) {
-            runCatching { Base64URL(x).decode() }.getOrNull()
-        } else {
-            null
-        }
-    }
+        ?.let { key -> key.copyOfRange(ED25519_MULTICODEC.size, key.size) }
+
+    private fun ed25519FromJwk(jwk: JsonObject): ByteArray? = jwk.string("x")
+        ?.takeIf { jwk.string("kty") == "OKP" && jwk.string("crv") == "Ed25519" }
+        ?.let { runCatching { Base64URL(it).decode() }.getOrNull() }
 
     // Through nimbus, whose Ed25519 runs on Tink: java.security has no Ed25519 below API 33.
     private fun verifyEd25519(publicKey: ByteArray, data: ByteArray, signature: ByteArray): Boolean {

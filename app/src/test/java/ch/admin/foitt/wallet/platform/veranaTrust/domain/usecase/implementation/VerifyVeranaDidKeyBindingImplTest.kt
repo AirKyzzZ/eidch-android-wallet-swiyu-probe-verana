@@ -82,9 +82,10 @@ class VerifyVeranaDidKeyBindingImplTest {
     fun `a certificate key the DID document does not list is not proven`() = runTest {
         assertEquals(VeranaDidKeyBinding.NOT_PROVEN, useCase(VERIFIER_DID, VeranaTrustRole.VERIFIER, issuerKey))
 
-        val withoutIssuerKey = VeranaDevnetFixtures.issuerDidDocument.let { document ->
-            document.copy(assertionMethods = document.assertionMethods.filterNot { it.id.endsWith("#openid4vc-development-issuer") })
-        }
+        val issuerDocument = VeranaDevnetFixtures.issuerDidDocument
+        val withoutIssuerKey = issuerDocument.copy(
+            assertionMethods = issuerDocument.assertionMethods.filterNot { it.id.endsWith("#openid4vc-development-issuer") },
+        )
         coEvery { documents.fetchDidDocument(ISSUER_DID) } returns withoutIssuerKey
         assertEquals(VeranaDidKeyBinding.NOT_PROVEN, useCase(ISSUER_DID, VeranaTrustRole.ISSUER, issuerKey))
     }

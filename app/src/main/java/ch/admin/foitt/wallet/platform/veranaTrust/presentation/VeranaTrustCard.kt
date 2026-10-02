@@ -58,6 +58,10 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.canRetry
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.networkLabel
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletTheme
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 // The proof-of-trust card as versioned at playground/public/trust-card/index.html. Wording and
 // palette are fixed cross-wallet, so the card renders the same evaluation in every wallet.
@@ -118,16 +122,7 @@ private fun CardContent(
 ) {
     val verdict = evidence.cardVerdict()
     val credentials = evidence.resolution.credentials
-    val serviceCredential = EcsClaimReader.findServiceCredential(credentials)
-    val organizationCredential = EcsClaimReader.findOrganizationCredential(credentials)
-    val serviceTone = rowTone(verdict, serviceCredential)
-    val organizationTone = rowTone(verdict, organizationCredential)
-    val service = if (serviceTone == StepTone.OK) EcsClaimReader.readEcsService(serviceCredential) else null
-    val organization = if (organizationTone == StepTone.OK) {
-        EcsClaimReader.readEcsOrganization(organizationCredential)
-    } else {
-        null
-    }
+    val service = verifiedService(verdict, credentials)
     val networkLabel = (evidence.resolution.network?.let(::listOf) ?: VERANA_NETWORKS).networkLabel()
 
     DidRow(
@@ -137,39 +132,7 @@ private fun CardContent(
     )
 
     if (credentials.isNotEmpty()) {
-        Column {
-            ChainStep(tone = serviceTone, label = "SERVICE") {
-                if (service != null) {
-                    ServiceIdentity(service)
-                } else {
-                    WithheldIdentity(
-                        headline = if (serviceCredential != null) {
-                            "Service claims not verified"
-                        } else {
-                            "No ECS-Service credential presented"
-                        },
-                        tone = serviceTone,
-                        copy = withheldCopy(serviceCredential, serviceTone),
-                    )
-                }
-            }
-            ChainStep(tone = organizationTone, label = "OPERATED BY", isLast = true) {
-                if (organization != null) {
-                    OrganizationIdentity(organization)
-                } else {
-                    WithheldIdentity(
-                        headline = if (organizationCredential != null) {
-                            "Operator claims not verified"
-                        } else {
-                            "No ECS-Organization credential presented"
-                        },
-                        tone = organizationTone,
-                        copy = withheldCopy(organizationCredential, organizationTone)
-                            ?: "Nothing verifies who operates this service",
-                    )
-                }
-            }
-        }
+        IdentityChain(verdict = verdict, credentials = credentials)
     }
 
     VerdictPill(
@@ -178,11 +141,7 @@ private fun CardContent(
     )
 
     evidence.resolution.evaluatedAt?.let { evaluatedAt ->
-        Text(
-            text = "Checked $evaluatedAt",
-            style = WalletTheme.typography.bodySmall,
-            color = CardPalette.grey500,
-        )
+        Footnote("Checked ${evaluatedAt.toDisplayTime()}")
     }
 
     AskBlock(
@@ -196,25 +155,76 @@ private fun CardContent(
     }
 
     if (onRetry != null && evidence.canRetry) {
-        Text(
-            text = stringResource(R.string.verana_trust_retry),
-            style = WalletTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = CardPalette.link,
-            modifier = Modifier
-                .clickable(role = Role.Button, onClick = onRetry)
-                .spaceBarKeyClickable(onRetry)
-                .padding(vertical = Sizes.s01),
-        )
+        RetryLink(onRetry)
     }
 
     if (networkLabel != null) {
-        Text(
-            text = "Demo network - do not share real data",
-            style = WalletTheme.typography.bodySmall,
-            color = CardPalette.grey500,
-        )
+        Footnote("Demo network - do not share real data")
     }
 }
+
+@Composable
+private fun IdentityChain(
+    verdict: CardVerdict,
+    credentials: List<VeranaTrustCredential>,
+) = Column {
+    val serviceCredential = EcsClaimReader.findServiceCredential(credentials)
+    val organizationCredential = EcsClaimReader.findOrganizationCredential(credentials)
+    val serviceTone = rowTone(verdict, serviceCredential)
+    val organizationTone = rowTone(verdict, organizationCredential)
+    val service = verifiedService(verdict, credentials)
+    val organization = verifiedOrganization(verdict, credentials)
+
+    ChainStep(tone = serviceTone, label = "SERVICE") {
+        if (service != null) {
+            ServiceIdentity(service)
+        } else {
+            WithheldIdentity(
+                headline = if (serviceCredential != null) {
+                    "Service claims not verified"
+                } else {
+                    "No ECS-Service credential presented"
+                },
+                tone = serviceTone,
+                copy = withheldCopy(serviceCredential, serviceTone),
+            )
+        }
+    }
+    ChainStep(tone = organizationTone, label = "OPERATED BY", isLast = true) {
+        if (organization != null) {
+            OrganizationIdentity(organization)
+        } else {
+            WithheldIdentity(
+                headline = if (organizationCredential != null) {
+                    "Operator claims not verified"
+                } else {
+                    "No ECS-Organization credential presented"
+                },
+                tone = organizationTone,
+                copy = withheldCopy(organizationCredential, organizationTone)
+                    ?: "Nothing verifies who operates this service",
+            )
+        }
+    }
+}
+
+@Composable
+private fun RetryLink(onRetry: () -> Unit) = Text(
+    text = stringResource(R.string.verana_trust_retry),
+    style = WalletTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+    color = CardPalette.link,
+    modifier = Modifier
+        .clickable(role = Role.Button, onClick = onRetry)
+        .spaceBarKeyClickable(onRetry)
+        .padding(vertical = Sizes.s01),
+)
+
+@Composable
+private fun Footnote(text: String) = Text(
+    text = text,
+    style = WalletTheme.typography.bodySmall,
+    color = CardPalette.grey500,
+)
 
 @Composable
 private fun LoadingRow(did: String?) = Column(
@@ -565,13 +575,7 @@ private fun AskBlock(
     party: String,
     credentialLabel: String,
 ) {
-    val accreditation = evidence.accreditation
-    val granted = when (accreditation?.status) {
-        VeranaAccreditationStatus.GRANTED -> true
-        VeranaAccreditationStatus.REFUSED -> false
-        VeranaAccreditationStatus.UNDETERMINED, null -> null
-    }
-    val inEcosystem = accreditation?.ecosystemName?.let { " in $it" }.orEmpty()
+    val granted = evidence.askGranted()
     val borderColor = when (granted) {
         true -> CardPalette.positive
         false -> CardPalette.danger
@@ -582,11 +586,6 @@ private fun AskBlock(
         false -> CardPalette.dangerContainer
         null -> CardPalette.grey50
     }
-    val verb = when (evidence.role) {
-        VeranaTrustRole.ISSUER -> "issuer"
-        VeranaTrustRole.VERIFIER -> "verifier"
-    }
-
     Column(
         verticalArrangement = Arrangement.spacedBy(Sizes.s02),
         modifier = Modifier
@@ -602,40 +601,39 @@ private fun AskBlock(
             color = CardPalette.grey900,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(Sizes.s02)) {
-            when (granted) {
-                true -> Icon(
-                    painter = painterResource(R.drawable.wallet_ic_checkmark),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = CardPalette.positive,
-                )
-
-                false -> Icon(
-                    painter = painterResource(R.drawable.wallet_ic_cross),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = CardPalette.danger,
-                )
-
-                null -> Icon(
-                    painter = painterResource(R.drawable.wallet_ic_info),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = CardPalette.grey500,
-                )
-            }
+            AskIcon(granted)
             Text(
-                text = when (granted) {
-                    true -> "$party is an authorized $verb of $credentialLabel$inEcosystem"
-                    false -> "$party is not an authorized $verb of $credentialLabel$inEcosystem"
-                    null -> "This could not be checked against the registry."
-                },
+                text = evidence.askSentence(party = party, credentialLabel = credentialLabel),
                 style = WalletTheme.typography.bodyMedium,
                 color = CardPalette.grey800,
                 modifier = Modifier.weight(1f),
             )
         }
     }
+}
+
+@Composable
+private fun AskIcon(granted: Boolean?) = when (granted) {
+    true -> Icon(
+        painter = painterResource(R.drawable.wallet_ic_checkmark),
+        contentDescription = null,
+        modifier = Modifier.size(18.dp),
+        tint = CardPalette.positive,
+    )
+
+    false -> Icon(
+        painter = painterResource(R.drawable.wallet_ic_cross),
+        contentDescription = null,
+        modifier = Modifier.size(18.dp),
+        tint = CardPalette.danger,
+    )
+
+    null -> Icon(
+        painter = painterResource(R.drawable.wallet_ic_info),
+        contentDescription = null,
+        modifier = Modifier.size(18.dp),
+        tint = CardPalette.grey500,
+    )
 }
 
 @Composable
@@ -798,6 +796,16 @@ private fun VeranaTrustEvidence.cardVerdict(): CardVerdict = when (resolution.st
     VeranaTrustStatus.UNVERIFIED -> CardVerdict.UNVERIFIED
 }
 
+private fun verifiedService(verdict: CardVerdict, credentials: List<VeranaTrustCredential>): EcsService? =
+    EcsClaimReader.findServiceCredential(credentials)
+        ?.takeIf { rowTone(verdict, it) == StepTone.OK }
+        ?.let(EcsClaimReader::readEcsService)
+
+private fun verifiedOrganization(verdict: CardVerdict, credentials: List<VeranaTrustCredential>): EcsOrganization? =
+    EcsClaimReader.findOrganizationCredential(credentials)
+        ?.takeIf { rowTone(verdict, it) == StepTone.OK }
+        ?.let(EcsClaimReader::readEcsOrganization)
+
 private fun rowTone(verdict: CardVerdict, credential: VeranaTrustCredential?): StepTone = when {
     verdict == CardVerdict.UNVERIFIED -> StepTone.NONE
     verdict == CardVerdict.TRUSTED && credential != null -> StepTone.OK
@@ -828,6 +836,31 @@ private fun verdictNote(evidence: VeranaTrustEvidence): String = when (evidence.
         VeranaUntrustedReason.NOT_TRUSTED, null -> "The Verana public registry does not vouch for this service."
     }
 }
+
+private fun VeranaTrustEvidence.askGranted(): Boolean? = when (accreditation?.status) {
+    VeranaAccreditationStatus.GRANTED -> true
+    VeranaAccreditationStatus.REFUSED -> false
+    VeranaAccreditationStatus.UNDETERMINED, null -> null
+}
+
+private fun VeranaTrustEvidence.askSentence(party: String, credentialLabel: String): String {
+    val verb = when (role) {
+        VeranaTrustRole.ISSUER -> "issuer"
+        VeranaTrustRole.VERIFIER -> "verifier"
+    }
+    val inEcosystem = accreditation?.ecosystemName?.let { " in $it" }.orEmpty()
+    return when (askGranted()) {
+        true -> "$party is an authorized $verb of $credentialLabel$inEcosystem"
+        false -> "$party is not an authorized $verb of $credentialLabel$inEcosystem"
+        null -> "This could not be checked against the registry."
+    }
+}
+
+private fun String.toDisplayTime(): String = runCatching {
+    OffsetDateTime.parse(this)
+        .atZoneSameInstant(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM))
+}.getOrDefault(this)
 
 private fun String.middleTruncated(maxLength: Int = 40): String =
     if (length <= maxLength) this else "${take(maxLength - 10)}…${takeLast(9)}"

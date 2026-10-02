@@ -105,7 +105,8 @@ class CheckVeranaAccreditationImplTest {
 
     @Test
     fun `refuses a VTJSC whose proof does not verify`() = runTest {
-        val tampered = JsonObject(VeranaDevnetFixtures.vtjsc + ("validUntil" to JsonPrimitive("2099-01-01T00:00:00.000Z")))
+        val validUntil = "validUntil" to JsonPrimitive("2099-01-01T00:00:00.000Z")
+        val tampered = JsonObject(VeranaDevnetFixtures.vtjsc + validUntil)
         coEvery { documents.fetchJson(VTJSC_ID) } returns tampered
 
         val accreditation = useCase(ISSUER_DID, VeranaTrustRole.ISSUER, VCT)
@@ -127,7 +128,9 @@ class CheckVeranaAccreditationImplTest {
 
     @Test
     fun `refuses a credential type that names no schema credential`() = runTest {
-        coEvery { documents.fetchJson(VCT) } returns JsonObject(mapOf("vct" to JsonPrimitive(VCT), "name" to JsonPrimitive("DemoCredential")))
+        coEvery {
+            documents.fetchJson(VCT)
+        } returns JsonObject(mapOf("vct" to JsonPrimitive(VCT), "name" to JsonPrimitive("DemoCredential")))
 
         val withoutSchema = useCase(ISSUER_DID, VeranaTrustRole.ISSUER, VCT)
         val withoutVct = useCase(ISSUER_DID, VeranaTrustRole.ISSUER, null)
