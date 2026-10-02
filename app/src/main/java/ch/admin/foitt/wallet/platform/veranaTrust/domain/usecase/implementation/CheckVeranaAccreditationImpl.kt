@@ -1,0 +1,142 @@
+package ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation
+
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VERANA_NETWORKS
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaNetwork
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaDocumentRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaIndexerRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.CheckVeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.util.DataIntegrity
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import java.net.URI
+import java.time.Instant
+import javax.inject.Inject
+
+class CheckVeranaAccreditationImpl(
+    private val documentRepository: VeranaDocumentRepository,
+    private val indexerRepository: VeranaIndexerRepository,
+    private val resolveVeranaTrust: ResolveVeranaTrust,
+    private val networks: List<VeranaNetwork>,
+) : CheckVeranaAccreditation {
+
+    @Inject
+    constructor(
+        documentRepository: VeranaDocumentRepository,
+        indexerRepository: VeranaIndexerRepository,
+        resolveVeranaTrust: ResolveVeranaTrust,
+    ) : this(documentRepository, indexerRepository, resolveVeranaTrust, VERANA_NETWORKS)
+
+    override suspend fun invoke(
+        did: String,
+        role: VeranaTrustRole,
+        vct: String?,
+    ): VeranaAccreditation = check(did, role, vct) ?: VeranaAccreditation(
+        status = VeranaAccreditationStatus.UNDETERMINED,
+        reason = VeranaAccreditationReason.REGISTRY_UNREACHABLE,
+    )
+
+    @Suppress("ReturnCount")
+    private suspend fun check(did: String, role: VeranaTrustRole, vct: String?): VeranaAccreditation? {
+        if (vct == null || !vct.isHttpsUrl()) return refused(VeranaAccreditationReason.NO_VERANA_SCHEMA)
+
+        val typeMetadata = documentRepository.fetchJson(vct) ?: return null
+        val credentialName = (typeMetadata as? JsonObject)?.string("name")
+        val vtjscId = (typeMetadata as? JsonObject)?.string("relatedJsonSchemaCredentialId")?.takeIf { it.isHttpsUrl() }
+            ?: return refused(VeranaAccreditationReason.NO_VERANA_SCHEMA, credentialName)
+
+        val vtjsc = (documentRepository.fetchJson(vtjscId) ?: return null) as? JsonObject
+        val vtjscIssuer = vtjsc?.let(DataIntegrity::issuerOf)
+        if (vtjsc == null || vtjscIssuer == null) {
+            return refused(VeranaAccreditationReason.SCHEMA_CREDENTIAL_MALFORMED, credentialName)
+        }
+        val issuerDocument = documentRepository.fetchDidDocument(vtjscIssuer) ?: return null
+        if (!DataIntegrity.verifyEddsaJcs2022(vtjsc, issuerDocument) || !DataIntegrity.withinValidity(vtjsc, Instant.now())) {
+            return refused(VeranaAccreditationReason.SCHEMA_CREDENTIAL_INVALID, credentialName)
+        }
+
+        val schemaRef = parseSchemaRef(vtjsc.jsonSchemaRef())
+            ?: return refused(VeranaAccreditationReason.UNKNOWN_NETWORK, credentialName)
+        val (ecosystemDid, authorized) = coroutineScope {
+            val ecosystemDid = async { schemaEcosystemDid(schemaRef) }
+            val authorized = async {
+                indexerRepository.hasActiveParticipant(schemaRef.network, did, role, schemaRef.schemaId)
+            }
+            ecosystemDid.await() to authorized.await()
+        }
+        if (ecosystemDid == null || authorized == null) return null
+        if (ecosystemDid != vtjscIssuer) {
+            return refused(VeranaAccreditationReason.ECOSYSTEM_MISMATCH, credentialName)
+        }
+
+        return VeranaAccreditation(
+            status = if (authorized) VeranaAccreditationStatus.GRANTED else VeranaAccreditationStatus.REFUSED,
+            reason = if (authorized) {
+                VeranaAccreditationReason.ACTIVE_PARTICIPANT
+            } else {
+                VeranaAccreditationReason.NO_ACTIVE_PARTICIPANT
+            },
+            credentialName = credentialName,
+            ecosystemName = ecosystemName(ecosystemDid),
+            schemaId = schemaRef.schemaId,
+            networkId = schemaRef.network.id,
+        )
+    }
+
+    fun parseSchemaRef(ref: String?): SchemaRef? {
+        val match = ref?.let(SCHEMA_REF::matchEntire) ?: return null
+        val network = networks.firstOrNull { it.id == match.groupValues[1] } ?: return null
+        return SchemaRef(network = network, schemaId = match.groupValues[2])
+    }
+
+    private suspend fun schemaEcosystemDid(schemaRef: SchemaRef): String? {
+        val ecosystemId = indexerRepository.fetchSchemaEcosystemId(schemaRef.network, schemaRef.schemaId) ?: return null
+        return indexerRepository.fetchEcosystemDid(schemaRef.network, ecosystemId)
+    }
+
+    private suspend fun ecosystemName(ecosystemDid: String): String? {
+        val resolution = resolveVeranaTrust(ecosystemDid)
+        if (resolution.status != VeranaTrustStatus.TRUSTED) return null
+        return resolution.credentials
+            .firstOrNull { it.ecsSchema == SERVICE_CREDENTIAL }
+            ?.claims
+            ?.firstOrNull { it.name == "name" }
+            ?.values
+            ?.singleOrNull()
+    }
+
+    private fun refused(reason: VeranaAccreditationReason, credentialName: String? = null) = VeranaAccreditation(
+        status = VeranaAccreditationStatus.REFUSED,
+        reason = reason,
+        credentialName = credentialName,
+    )
+
+    private fun JsonObject.jsonSchemaRef(): String? =
+        ((get("credentialSubject") as? JsonObject)?.get("jsonSchema") as? JsonObject)?.string("\$ref")
+
+    private fun JsonObject.string(name: String): String? =
+        (get(name) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+
+    private fun String.isHttpsUrl(): Boolean = runCatching {
+        val uri = URI(this)
+        uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+    }.getOrDefault(false)
+
+    data class SchemaRef(
+        val network: VeranaNetwork,
+        val schemaId: String,
+    )
+
+    private companion object {
+        const val SERVICE_CREDENTIAL = "ServiceCredential"
+        val SCHEMA_REF = Regex("""^vpr:verana:([^:]+):cs:(\d+)$""")
+    }
+}

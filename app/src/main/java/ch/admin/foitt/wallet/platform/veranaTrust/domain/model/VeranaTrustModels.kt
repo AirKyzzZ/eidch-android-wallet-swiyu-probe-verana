@@ -1,8 +1,7 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.domain.model
 
+import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
 import kotlinx.serialization.Serializable
-
-const val VeranaTrustResolverUrl = "https://resolver.testnet.verana.network"
 
 @Serializable
 enum class VeranaTrustRole {
@@ -11,56 +10,102 @@ enum class VeranaTrustRole {
 }
 
 @Serializable
-enum class VeranaTrustVerdict {
-    TRUSTED_AUTHORIZED,
-    TRUSTED_NOT_AUTHORIZED,
+enum class VeranaTrustStatus {
+    TRUSTED,
     UNTRUSTED,
     UNVERIFIED,
-    RESOLVER_UNAVAILABLE,
 }
 
 @Serializable
-data class VeranaTrustSummary(
-    val did: String,
-    val trustStatus: String,
-    val production: Boolean,
-    val evaluatedAt: String,
-    val evaluatedAtBlock: Long,
-    val expiresAt: String,
-)
+enum class VeranaUntrustedReason {
+    NO_DID_DOCUMENT,
+    NOT_REGISTERED,
+    NOT_TRUSTED,
+    ECOSYSTEM_NOT_TRUSTED,
+    DID_NOT_PROVEN,
+}
 
 @Serializable
-data class VeranaAuthorizationEvidence(
+data class VeranaTrustResolution(
     val did: String,
-    val vcSchemaId: String,
-    val authorized: Boolean,
-    val evaluatedAt: String,
-    val evaluatedAtBlock: Long,
+    val status: VeranaTrustStatus,
+    val reason: VeranaUntrustedReason? = null,
+    val network: VeranaNetwork? = null,
+    val evaluatedAt: String? = null,
+    val expiresAt: String? = null,
+    val credentials: List<VeranaTrustCredential> = emptyList(),
+    val unresolvableCredentialIds: List<String> = emptyList(),
+) {
+    companion object {
+        fun unresolved(
+            did: String,
+            status: VeranaTrustStatus,
+            reason: VeranaUntrustedReason? = null,
+            network: VeranaNetwork? = null,
+        ) = VeranaTrustResolution(
+            did = did,
+            status = status,
+            reason = reason,
+            network = network,
+        )
+    }
+}
+
+@Serializable
+enum class VeranaAccreditationStatus {
+    GRANTED,
+    REFUSED,
+    UNDETERMINED,
+}
+
+@Serializable
+enum class VeranaAccreditationReason {
+    ACTIVE_PARTICIPANT,
+    NO_ACTIVE_PARTICIPANT,
+    NO_VERANA_SCHEMA,
+    SCHEMA_CREDENTIAL_MALFORMED,
+    SCHEMA_CREDENTIAL_INVALID,
+    UNKNOWN_NETWORK,
+    ECOSYSTEM_MISMATCH,
+    REGISTRY_UNREACHABLE,
+}
+
+@Serializable
+data class VeranaAccreditation(
+    val status: VeranaAccreditationStatus,
+    val reason: VeranaAccreditationReason,
+    val credentialName: String? = null,
+    val ecosystemName: String? = null,
+    val schemaId: String? = null,
+    val networkId: String? = null,
 )
 
 @Serializable
 data class VeranaTrustEvidence(
     val role: VeranaTrustRole,
     val did: String,
-    val vcSchemaIds: List<String>,
-    val verdict: VeranaTrustVerdict,
-    val summary: VeranaTrustSummary?,
-    val authorizations: List<VeranaAuthorizationEvidence>,
-    val credentials: List<VeranaTrustCredential> = emptyList(),
-    val resolverUrl: String = VeranaTrustResolverUrl,
+    val vct: String?,
+    val resolution: VeranaTrustResolution,
+    val accreditation: VeranaAccreditation?,
 )
 
 val VeranaTrustEvidence?.blocksAccept: Boolean
-    get() = this?.verdict == VeranaTrustVerdict.UNTRUSTED || this?.verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
+    get() = this != null &&
+        !(resolution.status == VeranaTrustStatus.TRUSTED && accreditation?.status == VeranaAccreditationStatus.GRANTED)
+
+val VeranaTrustEvidence.canRetry: Boolean
+    get() = resolution.status == VeranaTrustStatus.UNVERIFIED ||
+        accreditation?.status == VeranaAccreditationStatus.UNDETERMINED
 
 @Serializable
 data class VeranaVerifierTrustContext(
     val authenticatedVerifierDid: String,
+    val certificateKey: Jwk?,
     val credentialId: Long,
 )
 
-sealed interface VeranaResolverResult<out T> {
-    data class Success<T>(val value: T) : VeranaResolverResult<T>
-    data object NotFound : VeranaResolverResult<Nothing>
-    data object Unavailable : VeranaResolverResult<Nothing>
+sealed interface VeranaIndexerAnswer {
+    data class Resolved(val resolution: VeranaTrustResolution) : VeranaIndexerAnswer
+    data object NotRegistered : VeranaIndexerAnswer
+    data object Unanswered : VeranaIndexerAnswer
 }

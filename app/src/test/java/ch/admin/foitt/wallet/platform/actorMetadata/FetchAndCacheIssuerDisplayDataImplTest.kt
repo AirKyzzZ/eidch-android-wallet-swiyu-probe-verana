@@ -23,12 +23,10 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.IdentityV1Trust
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustCheckResult
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import ch.admin.foitt.wallet.util.assertErrorType
 import ch.admin.foitt.wallet.util.assertOk
 import com.github.michaelbull.result.Err
@@ -60,12 +58,6 @@ class FetchAndCacheIssuerDisplayDataImplTest {
 
     @MockK
     private lateinit var mockEvaluateVeranaTrust: EvaluateVeranaTrust
-
-    @MockK
-    private lateinit var mockResolveVtjscIdFromVct: ResolveVtjscIdFromVct
-
-    @MockK
-    private lateinit var mockFetchVeranaTrustDetails: FetchVeranaTrustDetails
 
     @MockK
     private lateinit var mockCredentialIssuerDisplayRepo: CredentialIssuerDisplayRepo
@@ -100,8 +92,6 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             getAllAnyCredentialsByCredentialId = mockGetAllAnyCredentialByCredentialId,
             fetchTrustForIssuance = mockFetchTrustForIssuance,
             evaluateVeranaTrust = mockEvaluateVeranaTrust,
-            resolveVtjscIdFromVct = mockResolveVtjscIdFromVct,
-            fetchVeranaTrustDetails = mockFetchVeranaTrustDetails,
             credentialIssuerDisplayRepo = mockCredentialIssuerDisplayRepo,
             getLocalizedDisplay = mockGetLocalizedDisplay,
             fetchNonComplianceData = mockFetchNonComplianceData,
@@ -119,8 +109,6 @@ class FetchAndCacheIssuerDisplayDataImplTest {
         coEvery {
             mockEvaluateVeranaTrust(any(), any(), any(), any())
         } returns veranaTrustEvidence
-        coEvery { mockResolveVtjscIdFromVct(any(), any()) } answers { secondArg() }
-        coEvery { mockFetchVeranaTrustDetails(any()) } returns VeranaResolverResult.Unavailable
 
         coEvery {
             mockCredentialIssuerDisplayRepo.getIssuerDisplays(credentialId = any())
@@ -171,8 +159,8 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             mockEvaluateVeranaTrust(
                 role = VeranaTrustRole.ISSUER,
                 did = ISSUER_DID,
-                vcSchemaIds = setOf(VC_SCHEMA_ID),
-                vtjscIds = setOf(VC_SCHEMA_ID),
+                vct = null,
+                certificateKey = null,
             )
             mockCredentialIssuerDisplayRepo.getIssuerDisplays(credentialId = CREDENTIAL_ID)
             mockIdentityTrustStatement.entityName
@@ -310,7 +298,7 @@ class FetchAndCacheIssuerDisplayDataImplTest {
     }
 
     @Test
-    fun `Verana evaluates every distinct schema from the verified credential bundle`() = runTest {
+    fun `Verana evaluates the issuer of a single-issuer bundle once`() = runTest {
         val secondCredential = mockk<AnyCredential>()
         every { secondCredential.issuer } returns ISSUER_DID
         every { secondCredential.vcSchemaId } returns VC_SCHEMA_ID_2
@@ -324,14 +312,14 @@ class FetchAndCacheIssuerDisplayDataImplTest {
             mockEvaluateVeranaTrust(
                 role = VeranaTrustRole.ISSUER,
                 did = ISSUER_DID,
-                vcSchemaIds = setOf(VC_SCHEMA_ID, VC_SCHEMA_ID_2),
-                vtjscIds = setOf(VC_SCHEMA_ID, VC_SCHEMA_ID_2),
+                vct = null,
+                certificateKey = null,
             )
         }
     }
 
     @Test
-    fun `mixed verified credential issuers never call the Verana resolver`() = runTest {
+    fun `mixed verified credential issuers are unverified without asking Verana`() = runTest {
         val secondCredential = mockk<AnyCredential>()
         every { secondCredential.issuer } returns OTHER_ISSUER_DID
         every { secondCredential.vcSchemaId } returns VC_SCHEMA_ID_2
@@ -347,24 +335,33 @@ class FetchAndCacheIssuerDisplayDataImplTest {
                 trustCheckResult = any(),
                 issuerDisplays = any(),
                 nonComplianceData = any(),
-                veranaTrustEvidence = match { it.verdict == VeranaTrustVerdict.UNVERIFIED },
+                veranaTrustEvidence = match { it?.resolution?.status == VeranaTrustStatus.UNVERIFIED },
             )
         }
     }
 
     @Test
-    fun `blank verified credential schema never calls the Verana resolver`() = runTest {
-        every { mockAnyCredential.vcSchemaId } returns " "
+    fun `an issuer without a DID keeps the normal flow`() = runTest {
+        every { mockAnyCredential.issuer } returns "https://issuer.example"
+        coEvery { mockFetchNonComplianceData(any()) } returns nonComplianceData
 
         useCase(CREDENTIAL_ID).assertOk()
 
         coVerify(exactly = 0) { mockEvaluateVeranaTrust(any(), any(), any(), any()) }
+        coVerify {
+            mockCacheIssuerDisplayData(
+                trustCheckResult = any(),
+                issuerDisplays = any(),
+                nonComplianceData = any(),
+                veranaTrustEvidence = null,
+            )
+        }
     }
 
     private companion object {
         const val CREDENTIAL_ID = 1L
-        const val ISSUER_DID = "issuer did"
-        const val OTHER_ISSUER_DID = "other issuer did"
+        const val ISSUER_DID = "did:web:issuer.example"
+        const val OTHER_ISSUER_DID = "did:web:other.example"
         const val VC_SCHEMA_ID = "vcSchemaId"
         const val VC_SCHEMA_ID_2 = "vcSchemaId2"
         const val DISPLAY_LOCALE1 = "displayLocale1"
@@ -398,10 +395,9 @@ class FetchAndCacheIssuerDisplayDataImplTest {
         val veranaTrustEvidence = VeranaTrustEvidence(
             role = VeranaTrustRole.ISSUER,
             did = ISSUER_DID,
-            vcSchemaIds = listOf(VC_SCHEMA_ID),
-            verdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
-            summary = null,
-            authorizations = emptyList(),
+            vct = null,
+            resolution = VeranaTrustResolution(did = ISSUER_DID, status = VeranaTrustStatus.TRUSTED),
+            accreditation = null,
         )
     }
 }

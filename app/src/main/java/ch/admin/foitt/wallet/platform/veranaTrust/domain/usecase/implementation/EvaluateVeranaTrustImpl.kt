@@ -1,151 +1,72 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation
 
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAuthorizationEvidence
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
+import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaDidKeyBinding
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution.Companion.unresolved
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustSummary
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaTrustResolverRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaUntrustedReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.CheckVeranaAccreditation
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.VerifyVeranaDidKeyBinding
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.util.VeranaDids
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import timber.log.Timber
 import javax.inject.Inject
 
 class EvaluateVeranaTrustImpl @Inject constructor(
-    private val repository: VeranaTrustResolverRepository,
+    private val verifyVeranaDidKeyBinding: VerifyVeranaDidKeyBinding,
+    private val resolveVeranaTrust: ResolveVeranaTrust,
+    private val checkVeranaAccreditation: CheckVeranaAccreditation,
 ) : EvaluateVeranaTrust {
-
     override suspend fun invoke(
         role: VeranaTrustRole,
         did: String,
-        vcSchemaIds: Set<String>,
-        vtjscIds: Set<String>,
+        vct: String?,
+        certificateKey: Jwk?,
     ): VeranaTrustEvidence {
-        val sortedSchemaIds = vcSchemaIds.sorted()
-        val emptyEvidence = VeranaTrustEvidence(
+        fun evidence(resolution: VeranaTrustResolution, accreditation: VeranaAccreditation?) = VeranaTrustEvidence(
             role = role,
             did = did,
-            vcSchemaIds = sortedSchemaIds,
-            verdict = VeranaTrustVerdict.UNVERIFIED,
-            summary = null,
-            authorizations = emptyList(),
+            vct = vct,
+            resolution = resolution,
+            accreditation = accreditation,
         )
-
-        val hasValidDid = DID_REGEX.matches(did)
-        val hasValidSchemas = sortedSchemaIds.isNotEmpty() && sortedSchemaIds.none { schemaId ->
-            schemaId.isBlank() || schemaId != schemaId.trim()
-        }
-        if (!hasValidDid || !hasValidSchemas) {
-            return emptyEvidence
-        }
-        val sortedVtjscIds = vtjscIds.filter { it.isNotBlank() && it == it.trim() }.sorted()
 
         return try {
-            withTimeout(EVALUATION_TIMEOUT_MILLIS) {
-                evaluate(
-                    emptyEvidence = emptyEvidence,
-                    role = role,
-                    did = did,
-                    sortedVtjscIds = sortedVtjscIds,
-                )
+            val binding = if (certificateKey != null && VeranaDids.hasDidDocument(did)) {
+                verifyVeranaDidKeyBinding(did = did, role = role, certificateKey = certificateKey)
+            } else {
+                VeranaDidKeyBinding.PROVEN
             }
-        } catch (_: TimeoutCancellationException) {
-            emptyEvidence.copy(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            emptyEvidence.copy(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE)
-        }
-    }
-
-    @Suppress("ReturnCount")
-    private suspend fun evaluate(
-        emptyEvidence: VeranaTrustEvidence,
-        role: VeranaTrustRole,
-        did: String,
-        sortedVtjscIds: List<String>,
-    ): VeranaTrustEvidence {
-        val summary = when (val result = repository.fetchSummary(did)) {
-            is VeranaResolverResult.Success -> result.value
-            VeranaResolverResult.NotFound -> return emptyEvidence
-            VeranaResolverResult.Unavailable -> {
-                return emptyEvidence.copy(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE)
-            }
-        }
-
-        val evidenceWithSummary = emptyEvidence.copy(summary = summary)
-        if (!summary.isTrustedDid(did)) {
-            return evidenceWithSummary.copy(
-                verdict = VeranaTrustVerdict.UNTRUSTED,
-                authorizations = knownAuthorizations(role, did, sortedVtjscIds),
-            )
-        }
-
-        // No resolvable VTJSC id means the authorization could not be determined, never that it was refused.
-        if (sortedVtjscIds.isEmpty()) {
-            return evidenceWithSummary.copy(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE)
-        }
-
-        val authorizations = mutableListOf<VeranaAuthorizationEvidence>()
-        for (vtjscId in sortedVtjscIds) {
-            val authorization = when (
-                val result = repository.fetchAuthorization(
-                    role = role,
-                    did = did,
-                    vcSchemaId = vtjscId,
+            when (binding) {
+                VeranaDidKeyBinding.NOT_PROVEN -> evidence(
+                    resolution = unresolved(did, VeranaTrustStatus.UNTRUSTED, VeranaUntrustedReason.DID_NOT_PROVEN),
+                    accreditation = null,
                 )
-            ) {
-                is VeranaResolverResult.Success -> result.value
-                VeranaResolverResult.NotFound,
-                VeranaResolverResult.Unavailable -> {
-                    return evidenceWithSummary.copy(
-                        verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE,
-                        authorizations = authorizations,
-                    )
+
+                VeranaDidKeyBinding.UNAVAILABLE -> evidence(
+                    resolution = unresolved(did, VeranaTrustStatus.UNVERIFIED),
+                    accreditation = null,
+                )
+
+                VeranaDidKeyBinding.PROVEN -> coroutineScope {
+                    val resolution = async { resolveVeranaTrust(did) }
+                    val accreditation = async { checkVeranaAccreditation(did = did, role = role, vct = vct) }
+                    evidence(resolution = resolution.await(), accreditation = accreditation.await())
                 }
             }
-
-            if (authorization.did != did || authorization.vcSchemaId != vtjscId) {
-                return evidenceWithSummary.copy(
-                    verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE,
-                    authorizations = authorizations,
-                )
-            }
-            authorizations += authorization
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Timber.w(error, "Verana trust evaluation failed")
+            evidence(resolution = unresolved(did, VeranaTrustStatus.UNVERIFIED), accreditation = null)
         }
-
-        val verdict = if (authorizations.all { it.authorized }) {
-            VeranaTrustVerdict.TRUSTED_AUTHORIZED
-        } else {
-            VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED
-        }
-        return evidenceWithSummary.copy(
-            verdict = verdict,
-            authorizations = authorizations,
-        )
-    }
-
-    // Gathered only so an untrusted counterparty still shows its accreditation line; the verdict
-    // stays UNTRUSTED whatever this returns, so a failed lookup can never soften it.
-    private suspend fun knownAuthorizations(
-        role: VeranaTrustRole,
-        did: String,
-        sortedVtjscIds: List<String>,
-    ): List<VeranaAuthorizationEvidence> = sortedVtjscIds.mapNotNull { vtjscId ->
-        val result = repository.fetchAuthorization(role = role, did = did, vcSchemaId = vtjscId)
-        (result as? VeranaResolverResult.Success)?.value
-            ?.takeIf { it.did == did && it.vcSchemaId == vtjscId }
-    }
-
-    private fun VeranaTrustSummary.isTrustedDid(expectedDid: String): Boolean =
-        did == expectedDid && trustStatus == TRUSTED_STATUS
-
-    private companion object {
-        const val TRUSTED_STATUS = "TRUSTED"
-        const val EVALUATION_TIMEOUT_MILLIS = 10_000L
-        val DID_REGEX = """^did:[a-z0-9]+:(?:(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})*:)*(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+$"""
-            .toRegex()
     }
 }

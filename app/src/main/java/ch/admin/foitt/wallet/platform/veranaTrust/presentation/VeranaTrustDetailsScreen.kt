@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,18 +21,21 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.admin.foitt.wallet.R
 import ch.admin.foitt.wallet.platform.composables.Buttons
 import ch.admin.foitt.wallet.platform.scaffold.presentation.LocalScaffoldPaddings
 import ch.admin.foitt.wallet.platform.utils.openLink
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustCredentialUiState
-import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustDetailsLoadState
+import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustUiState
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletTexts
 import ch.admin.foitt.wallet.theme.WalletTheme
+import java.net.URLEncoder
 
 @Composable
 fun VeranaTrustDetailsScreen(
@@ -41,21 +43,17 @@ fun VeranaTrustDetailsScreen(
 ) {
     val context = LocalContext.current
     VeranaTrustDetailsContent(
-        state = viewModel.uiState.collectAsStateWithLifecycle().value,
-        cardEvidence = viewModel.cardEvidence.collectAsStateWithLifecycle().value,
-        onRetry = viewModel::onRetry,
+        trust = viewModel.uiState,
         onOpenLink = context::openLink,
     )
 }
 
 @Composable
 private fun VeranaTrustDetailsContent(
-    state: VeranaTrustDetailsLoadState,
-    cardEvidence: VeranaTrustEvidence,
-    onRetry: () -> Unit,
+    trust: VeranaTrustUiState,
     onOpenLink: (String) -> Unit,
 ) {
-    val trust = state.trust
+    val evidence = trust.evidence
     val topPadding = LocalScaffoldPaddings.current.calculateTopPadding()
 
     Box(
@@ -85,100 +83,120 @@ private fun VeranaTrustDetailsContent(
 
             item {
                 VeranaTrustCard(
-                    evidence = cardEvidence,
+                    evidence = evidence,
                     onOpenDetails = null,
-                    onRetry = onRetry,
+                    onRetry = null,
                 )
             }
 
             item {
-                DetailsSection(title = stringResource(R.string.verana_trust_identity_section)) {
-                    DetailRow(stringResource(R.string.verana_trust_did), trust.did)
-                    DetailRow(stringResource(R.string.verana_trust_resolver), trust.resolverUrl)
-                }
+                IdentitySection(evidence = evidence, onOpenLink = onOpenLink)
             }
 
             item {
                 DetailsSection(title = stringResource(R.string.verana_trust_credential_types)) {
-                    trust.schemaIds.forEach { schemaId ->
-                        WalletTexts.BodyMedium(text = schemaId)
-                    }
-                }
-            }
-
-            trust.summary?.let { summary ->
-                item {
-                    DetailsSection(title = stringResource(R.string.verana_trust_q1_section)) {
-                        DetailRow(stringResource(R.string.verana_trust_status), summary.trustStatus)
-                        DetailRow(
-                            stringResource(R.string.verana_trust_production),
-                            stringResource(if (summary.production) R.string.verana_trust_yes else R.string.verana_trust_no),
-                        )
-                        DetailRow(stringResource(R.string.verana_trust_evaluated_at), summary.evaluatedAt)
-                        DetailRow(stringResource(R.string.verana_trust_block), summary.evaluatedAtBlock.toString())
-                        DetailRow(stringResource(R.string.verana_trust_expires_at), summary.expiresAt)
+                    DetailRow(stringResource(R.string.verana_trust_type), evidence.vct ?: NOT_AVAILABLE)
+                    evidence.accreditation?.credentialName?.let {
+                        DetailRow(stringResource(R.string.verana_trust_name), it)
                     }
                 }
             }
 
             item {
-                DetailsSection(
-                    title = stringResource(
-                        if (trust.role == VeranaTrustRole.ISSUER) {
-                            R.string.verana_trust_authorization_section_issuer
-                        } else {
-                            R.string.verana_trust_authorization_section_verifier
-                        }
-                    )
-                ) {
-                    trust.authorizations.forEach { authorization ->
-                        DetailRow(stringResource(R.string.verana_trust_did), authorization.did)
-                        DetailRow(stringResource(R.string.verana_trust_credential_types), authorization.vcSchemaId)
-                        DetailRow(
-                            stringResource(R.string.verana_trust_authorized),
-                            stringResource(if (authorization.authorized) R.string.verana_trust_yes else R.string.verana_trust_no),
-                        )
-                        DetailRow(stringResource(R.string.verana_trust_evaluated_at), authorization.evaluatedAt)
-                        DetailRow(stringResource(R.string.verana_trust_block), authorization.evaluatedAtBlock.toString())
-                    }
-                }
+                ResolutionSection(resolution = evidence.resolution)
             }
 
-            when (state) {
-                is VeranaTrustDetailsLoadState.Loading -> item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Sizes.s08),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
+            item {
+                AccreditationSection(role = evidence.role, accreditation = evidence.accreditation)
+            }
 
-                is VeranaTrustDetailsLoadState.Unavailable -> item {
-                    DetailsSection(title = stringResource(R.string.verana_trust_full_evidence)) {
-                        WalletTexts.BodyMedium(
-                            text = stringResource(R.string.verana_trust_full_evidence_unavailable)
-                        )
-                        Spacer(Modifier.height(Sizes.s02))
-                        Buttons.FilledSecondary(
-                            text = stringResource(R.string.verana_trust_retry),
-                            onClick = onRetry,
-                        )
-                    }
-                }
-
-                is VeranaTrustDetailsLoadState.Loaded -> items(
-                    items = trust.credentials,
-                ) { credential ->
-                    CredentialEvidence(
-                        credential = credential,
-                        onOpenLink = onOpenLink,
-                    )
-                }
+            items(items = trust.credentials) { credential ->
+                CredentialEvidence(
+                    credential = credential,
+                    onOpenLink = onOpenLink,
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun IdentitySection(
+    evidence: VeranaTrustEvidence,
+    onOpenLink: (String) -> Unit,
+) = DetailsSection(title = stringResource(R.string.verana_trust_identity_section)) {
+    val network = evidence.resolution.network
+    DetailRow(stringResource(R.string.verana_trust_did), evidence.did)
+    network?.let {
+        DetailRow(stringResource(R.string.verana_trust_network), it.name)
+        DetailRow(stringResource(R.string.verana_trust_indexer), it.indexerUrl)
+    }
+    network?.explorerUrl?.let { explorerUrl ->
+        val link = "$explorerUrl/did/${URLEncoder.encode(evidence.did, Charsets.UTF_8.name())}"
+        Buttons.TextLink(
+            text = stringResource(R.string.verana_trust_explorer),
+            onClick = { onOpenLink(link) },
+            endIcon = painterResource(R.drawable.wallet_ic_external_link),
+        )
+    }
+}
+
+@Composable
+private fun ResolutionSection(
+    resolution: VeranaTrustResolution,
+) = DetailsSection(title = stringResource(R.string.verana_trust_q1_section)) {
+    DetailRow(stringResource(R.string.verana_trust_status), resolution.status.name)
+    resolution.reason?.let {
+        DetailRow(stringResource(R.string.verana_trust_reason), it.name)
+    }
+    resolution.network?.let {
+        DetailRow(
+            stringResource(R.string.verana_trust_production),
+            stringResource(if (it.production) R.string.verana_trust_yes else R.string.verana_trust_no),
+        )
+    }
+    resolution.evaluatedAt?.let {
+        DetailRow(stringResource(R.string.verana_trust_evaluated_at), it)
+    }
+    resolution.expiresAt?.let {
+        DetailRow(stringResource(R.string.verana_trust_expires_at), it)
+    }
+    if (resolution.unresolvableCredentialIds.isNotEmpty()) {
+        DetailRow(
+            stringResource(R.string.verana_trust_unresolvable_credentials),
+            resolution.unresolvableCredentialIds.joinToString("\n"),
+        )
+    }
+}
+
+@Composable
+private fun AccreditationSection(
+    role: VeranaTrustRole,
+    accreditation: VeranaAccreditation?,
+) = DetailsSection(
+    title = stringResource(
+        when (role) {
+            VeranaTrustRole.ISSUER -> R.string.verana_trust_authorization_section_issuer
+            VeranaTrustRole.VERIFIER -> R.string.verana_trust_authorization_section_verifier
+        }
+    )
+) {
+    DetailRow(
+        stringResource(R.string.verana_trust_authorized),
+        when (accreditation?.status) {
+            VeranaAccreditationStatus.GRANTED -> stringResource(R.string.verana_trust_yes)
+            VeranaAccreditationStatus.REFUSED -> stringResource(R.string.verana_trust_no)
+            VeranaAccreditationStatus.UNDETERMINED, null -> NOT_AVAILABLE
+        },
+    )
+    accreditation?.let {
+        DetailRow(stringResource(R.string.verana_trust_reason), it.reason.name)
+    }
+    accreditation?.ecosystemName?.let {
+        DetailRow(stringResource(R.string.verana_trust_ecosystem), it)
+    }
+    accreditation?.schemaId?.let { schemaId ->
+        DetailRow(stringResource(R.string.verana_trust_schema), "${accreditation.networkId.orEmpty()} · $schemaId")
     }
 }
 
@@ -188,15 +206,10 @@ private fun CredentialEvidence(
     onOpenLink: (String) -> Unit,
 ) {
     DetailsSection(title = stringResource(R.string.verana_trust_credential_evidence)) {
-        DetailRow(stringResource(R.string.verana_trust_result), credential.result)
-        credential.ecsType?.let {
-            DetailRow(stringResource(R.string.verana_trust_ecosystem_type), it)
+        DetailRow(stringResource(R.string.verana_trust_ecosystem_type), credential.ecsSchema)
+        credential.id?.let {
+            DetailRow(stringResource(R.string.verana_trust_credential_id), it)
         }
-        DetailRow(stringResource(R.string.verana_trust_presented_by), credential.presentedBy)
-        DetailRow(stringResource(R.string.verana_trust_issued_by), credential.issuedBy)
-        DetailRow(stringResource(R.string.verana_trust_credential_id), credential.id)
-        DetailRow(stringResource(R.string.verana_trust_type), credential.type)
-        DetailRow(stringResource(R.string.verana_trust_format), credential.format)
 
         if (credential.claims.isNotEmpty()) {
             SubsectionTitle(stringResource(R.string.verana_trust_claims))
@@ -208,47 +221,6 @@ private fun CredentialEvidence(
                         onClick = { onOpenLink(link) },
                         endIcon = painterResource(R.drawable.wallet_ic_external_link),
                     )
-                }
-            }
-        }
-
-        if (credential.permissionChain.isNotEmpty()) {
-            SubsectionTitle(stringResource(R.string.verana_trust_permission_chain))
-            credential.permissionChain.forEach { permission ->
-                WalletTexts.LabelLargeEmphasized(
-                    text = stringResource(R.string.verana_trust_permission, permission.permissionId)
-                )
-                DetailRow(stringResource(R.string.verana_trust_type), permission.type)
-                DetailRow(stringResource(R.string.verana_trust_did), permission.did)
-                DetailRow(
-                    stringResource(R.string.verana_trust_trusted_service),
-                    stringResource(
-                        if (permission.didIsTrustedVerifiableService) {
-                            R.string.verana_trust_yes
-                        } else {
-                            R.string.verana_trust_no
-                        }
-                    ),
-                )
-                DetailRow(stringResource(R.string.verana_trust_permission_state), permission.permissionState)
-                DetailRow(stringResource(R.string.verana_trust_deposit), permission.deposit)
-                permission.serviceName?.let {
-                    DetailRow(stringResource(R.string.verana_trust_service_name), it)
-                }
-                permission.organizationName?.let {
-                    DetailRow(stringResource(R.string.verana_trust_organization_name), it)
-                }
-                permission.countryCode?.let {
-                    DetailRow(stringResource(R.string.verana_trust_country_code), it)
-                }
-                permission.legalJurisdiction?.let {
-                    DetailRow(stringResource(R.string.verana_trust_legal_jurisdiction), it)
-                }
-                permission.effectiveFrom?.let {
-                    DetailRow(stringResource(R.string.verana_trust_effective_from), it)
-                }
-                permission.effectiveUntil?.let {
-                    DetailRow(stringResource(R.string.verana_trust_effective_until), it)
                 }
             }
         }
@@ -292,3 +264,5 @@ private fun DetailRow(label: String, value: String) {
         WalletTexts.BodyMedium(text = value)
     }
 }
+
+private const val NOT_AVAILABLE = "—"

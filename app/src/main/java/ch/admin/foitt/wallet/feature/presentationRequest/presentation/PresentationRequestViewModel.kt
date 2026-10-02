@@ -298,6 +298,7 @@ class PresentationRequestViewModel @AssistedInject constructor(
             ?.let { authenticatedDid ->
                 VeranaVerifierTrustContext(
                     authenticatedVerifierDid = authenticatedDid,
+                    certificateKey = presentationRequestWithRaw.authenticatedVerifierCertificateKey,
                     credentialId = compatibleCredential.credentialId,
                 )
             }

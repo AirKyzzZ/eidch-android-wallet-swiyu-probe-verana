@@ -1,15 +1,17 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.di
 
-import ch.admin.foitt.wallet.platform.veranaTrust.data.VctTypeMetadataRepositoryImpl
-import ch.admin.foitt.wallet.platform.veranaTrust.data.VeranaTrustResolverRepositoryImpl
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VctTypeMetadataRepository
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaTrustResolverRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.data.VeranaDocumentRepositoryImpl
+import ch.admin.foitt.wallet.platform.veranaTrust.data.VeranaIndexerRepositoryImpl
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaDocumentRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaIndexerRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.CheckVeranaAccreditation
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.VerifyVeranaDidKeyBinding
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.CheckVeranaAccreditationImpl
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.EvaluateVeranaTrustImpl
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.FetchVeranaTrustDetailsImpl
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.ResolveVtjscIdFromVctImpl
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.ResolveVeranaTrustImpl
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation.VerifyVeranaDidKeyBindingImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -23,20 +25,23 @@ internal interface VeranaTrustModule {
     fun bindEvaluateVeranaTrust(useCase: EvaluateVeranaTrustImpl): EvaluateVeranaTrust
 
     @Binds
-    fun bindFetchVeranaTrustDetails(useCase: FetchVeranaTrustDetailsImpl): FetchVeranaTrustDetails
+    fun bindResolveVeranaTrust(useCase: ResolveVeranaTrustImpl): ResolveVeranaTrust
 
     @Binds
-    fun bindResolveVtjscIdFromVct(useCase: ResolveVtjscIdFromVctImpl): ResolveVtjscIdFromVct
+    fun bindCheckVeranaAccreditation(useCase: CheckVeranaAccreditationImpl): CheckVeranaAccreditation
 
     @Binds
-    @ActivityRetainedScoped
-    fun bindVeranaTrustResolverRepository(
-        repository: VeranaTrustResolverRepositoryImpl,
-    ): VeranaTrustResolverRepository
+    fun bindVerifyVeranaDidKeyBinding(useCase: VerifyVeranaDidKeyBindingImpl): VerifyVeranaDidKeyBinding
 
     @Binds
     @ActivityRetainedScoped
-    fun bindVctTypeMetadataRepository(
-        repository: VctTypeMetadataRepositoryImpl,
-    ): VctTypeMetadataRepository
+    fun bindVeranaIndexerRepository(
+        repository: VeranaIndexerRepositoryImpl,
+    ): VeranaIndexerRepository
+
+    @Binds
+    @ActivityRetainedScoped
+    fun bindVeranaDocumentRepository(
+        repository: VeranaDocumentRepositoryImpl,
+    ): VeranaDocumentRepository
 }

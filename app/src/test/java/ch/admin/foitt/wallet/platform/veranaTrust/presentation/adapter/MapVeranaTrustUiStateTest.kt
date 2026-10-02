@@ -1,156 +1,93 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.presentation.adapter
 
 import ch.admin.foitt.wallet.R
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaPermissionChainEntry
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustClaim
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustCredential
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustDetails
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustSummary
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
-import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustAction
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.presentation.model.VeranaTrustTone
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class MapVeranaTrustUiStateTest {
-    @Test
-    fun `trusted authorized issuer is the only positive state and opens details`() {
-        val state = mapVeranaTrustUiState(evidence())
 
-        assertEquals(R.string.verana_trust_issuer, state.roleResId)
+    @Test
+    fun `trusted and granted is positive`() {
+        val state = mapVeranaTrustUiState(evidence(VeranaTrustStatus.TRUSTED, VeranaAccreditationStatus.GRANTED))
+
         assertEquals(R.string.verana_trust_trusted_authorized_title, state.titleResId)
         assertEquals(VeranaTrustTone.POSITIVE, state.tone)
-        assertEquals(VeranaTrustAction.OPEN_DETAILS, state.action)
+        assertEquals(R.string.verana_trust_issuer, state.roleResId)
     }
 
     @Test
-    fun `trusted but unauthorized verifier is warning and still opens evidence`() {
-        val state = mapVeranaTrustUiState(
-            evidence(
-                role = VeranaTrustRole.VERIFIER,
-                verdict = VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED,
-            )
-        )
+    fun `trusted but refused is a warning`() {
+        val state = mapVeranaTrustUiState(evidence(VeranaTrustStatus.TRUSTED, VeranaAccreditationStatus.REFUSED))
 
-        assertEquals(R.string.verana_trust_verifier, state.roleResId)
         assertEquals(R.string.verana_trust_not_authorized_title, state.titleResId)
         assertEquals(VeranaTrustTone.WARNING, state.tone)
-        assertEquals(VeranaTrustAction.OPEN_DETAILS, state.action)
-        assertNotEquals(VeranaTrustTone.POSITIVE, state.tone)
     }
 
     @Test
-    fun `untrusted is non-positive and has no action`() {
-        val state = mapVeranaTrustUiState(evidence(verdict = VeranaTrustVerdict.UNTRUSTED))
-
-        assertEquals(VeranaTrustTone.NEGATIVE, state.tone)
-        assertEquals(VeranaTrustAction.NONE, state.action)
-        assertNotEquals(VeranaTrustTone.POSITIVE, state.tone)
-    }
-
-    @Test
-    fun `unverified is neutral and has no action`() {
-        val state = mapVeranaTrustUiState(evidence(verdict = VeranaTrustVerdict.UNVERIFIED))
-
-        assertEquals(R.string.verana_trust_unverified_title, state.titleResId)
-        assertEquals(VeranaTrustTone.NEUTRAL, state.tone)
-        assertEquals(VeranaTrustAction.NONE, state.action)
-    }
-
-    @Test
-    fun `resolver unavailable is neutral and retries instead of opening details`() {
-        val state = mapVeranaTrustUiState(evidence(verdict = VeranaTrustVerdict.RESOLVER_UNAVAILABLE))
+    fun `trusted with an undetermined accreditation is unavailable`() {
+        val state = mapVeranaTrustUiState(evidence(VeranaTrustStatus.TRUSTED, VeranaAccreditationStatus.UNDETERMINED))
 
         assertEquals(R.string.verana_trust_unavailable_title, state.titleResId)
         assertEquals(VeranaTrustTone.NEUTRAL, state.tone)
-        assertEquals(VeranaTrustAction.RETRY, state.action)
-        assertNotEquals(VeranaTrustTone.POSITIVE, state.tone)
     }
 
     @Test
-    fun `every exact credential schema is retained as a separate row`() {
-        val state = mapVeranaTrustUiState(
-            evidence(schemaIds = listOf(SCHEMA_ID, SCHEMA_ID_2))
-        )
+    fun `untrusted is negative whatever the accreditation says`() {
+        val state = mapVeranaTrustUiState(evidence(VeranaTrustStatus.UNTRUSTED, VeranaAccreditationStatus.GRANTED))
 
-        assertEquals(listOf(SCHEMA_ID, SCHEMA_ID_2), state.schemaIds)
+        assertEquals(R.string.verana_trust_untrusted_title, state.titleResId)
+        assertEquals(VeranaTrustTone.NEGATIVE, state.tone)
     }
 
     @Test
-    fun `full evidence exposes only safe http links`() {
-        val details = details(
+    fun `unverified is neutral`() {
+        val state = mapVeranaTrustUiState(evidence(VeranaTrustStatus.UNVERIFIED, null))
+
+        assertEquals(R.string.verana_trust_unverified_title, state.titleResId)
+        assertEquals(VeranaTrustTone.NEUTRAL, state.tone)
+    }
+
+    @Test
+    fun `credential claims keep only safe http links`() {
+        val credential = VeranaTrustCredential(
+            ecsSchema = "ServiceCredential",
             claims = listOf(
-                VeranaTrustClaim("privacyPolicy", listOf("safe"), "https://example.org/privacy"),
-                VeranaTrustClaim("terms", listOf("unsafe"), "javascript:alert(1)"),
-                VeranaTrustClaim("homepage", listOf("relative"), "/about"),
-            )
+                VeranaTrustClaim("privacyPolicyUri", listOf("https://svc.example/p"), "https://svc.example/p"),
+                VeranaTrustClaim("termsAndConditionsUri", listOf("ftp://svc.example/t"), "ftp://svc.example/t"),
+            ),
         )
+        val evidence = evidence(VeranaTrustStatus.TRUSTED, VeranaAccreditationStatus.GRANTED).let {
+            it.copy(resolution = it.resolution.copy(credentials = listOf(credential)))
+        }
 
-        val state = mapVeranaTrustUiState(evidence(), details)
+        val claims = mapVeranaTrustUiState(evidence).credentials.single().claims
 
-        assertEquals("https://example.org/privacy", state.credentials[0].claims[0].safeHttpUrl)
-        assertNull(state.credentials[0].claims[1].safeHttpUrl)
-        assertNull(state.credentials[0].claims[2].safeHttpUrl)
+        assertEquals("https://svc.example/p", claims[0].safeHttpUrl)
+        assertNull(claims[1].safeHttpUrl)
     }
 
-    private fun evidence(
-        role: VeranaTrustRole = VeranaTrustRole.ISSUER,
-        verdict: VeranaTrustVerdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
-        schemaIds: List<String> = listOf(SCHEMA_ID),
-    ) = VeranaTrustEvidence(
-        role = role,
+    private fun evidence(status: VeranaTrustStatus, accreditation: VeranaAccreditationStatus?) = VeranaTrustEvidence(
+        role = VeranaTrustRole.ISSUER,
         did = DID,
-        vcSchemaIds = schemaIds,
-        verdict = verdict,
-        summary = summary(),
-        authorizations = emptyList(),
-    )
-
-    private fun details(
-        claims: List<VeranaTrustClaim> = emptyList(),
-        summary: VeranaTrustSummary = summary(),
-    ) = VeranaTrustDetails(
-        summary = summary,
-        credentials = listOf(
-            VeranaTrustCredential(
-                result = "TRUSTED",
-                ecsType = "VerifiableService",
-                presentedBy = DID,
-                issuedBy = DID,
-                id = "credential-1",
-                type = "VerifiableCredential",
-                format = "jwt_vc_json",
-                claims = claims,
-                permissionChain = listOf(
-                    VeranaPermissionChainEntry(
-                        permissionId = 1,
-                        type = "ECOSYSTEM",
-                        did = DID,
-                        didIsTrustedVerifiableService = true,
-                        deposit = "0",
-                        permissionState = "VALIDATED",
-                    )
-                ),
-            )
-        ),
-    )
-
-    private fun summary() = VeranaTrustSummary(
-        did = DID,
-        trustStatus = "TRUSTED",
-        production = true,
-        evaluatedAt = "2026-07-18T12:00:00Z",
-        evaluatedAtBlock = 42,
-        expiresAt = "2027-07-18T12:00:00Z",
+        vct = "https://ecosystem.example/vt/vct/8",
+        resolution = VeranaTrustResolution(did = DID, status = status),
+        accreditation = accreditation?.let {
+            VeranaAccreditation(status = it, reason = VeranaAccreditationReason.ACTIVE_PARTICIPANT)
+        },
     )
 
     private companion object {
-        const val DID = "did:web:example.org"
-        const val SCHEMA_ID = "https://schemas.example/one"
-        const val SCHEMA_ID_2 = "https://schemas.example/two"
+        const val DID = "did:webvh:QmService:service.example"
     }
 }

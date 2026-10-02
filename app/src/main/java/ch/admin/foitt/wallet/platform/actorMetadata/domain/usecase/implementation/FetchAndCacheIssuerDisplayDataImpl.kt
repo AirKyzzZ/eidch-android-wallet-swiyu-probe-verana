@@ -18,13 +18,11 @@ import ch.admin.foitt.wallet.platform.navigation.domain.model.ComponentScope
 import ch.admin.foitt.wallet.platform.nonCompliance.domain.usecase.FetchNonComplianceData
 import ch.admin.foitt.wallet.platform.ssi.domain.model.CredentialIssuerDisplayRepositoryError
 import ch.admin.foitt.wallet.platform.ssi.domain.repository.CredentialIssuerDisplayRepo
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.Result
 import com.github.michaelbull.result.coroutines.coroutineBinding
 import com.github.michaelbull.result.coroutines.runSuspendCatching
@@ -35,8 +33,6 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
     private val getAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId,
     private val fetchTrustForIssuance: FetchTrustForIssuance,
     private val evaluateVeranaTrust: EvaluateVeranaTrust,
-    private val resolveVtjscIdFromVct: ResolveVtjscIdFromVct,
-    private val fetchVeranaTrustDetails: FetchVeranaTrustDetails,
     private val credentialIssuerDisplayRepo: CredentialIssuerDisplayRepo,
     private val getLocalizedDisplay: GetLocalizedDisplay,
     private val fetchNonComplianceData: FetchNonComplianceData,
@@ -59,7 +55,7 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
             issuerDid = anyCredential.issuer,
             vcSchemaId = anyCredential.vcSchemaId,
         )
-        val veranaTrustEvidence = evaluateVeranaTrust(anyCredentials).withResolvedCredentials()
+        val veranaTrustEvidence = evaluateVeranaTrust(anyCredentials)
         val actorTrustStatement = trustCheckResult.actorTrustStatement
         val savedIssuerDisplays = credentialIssuerDisplayRepo.getIssuerDisplays(credentialId)
             .mapError(CredentialIssuerDisplayRepositoryError::toFetchAndCacheIssuerDisplayDataError)
@@ -107,53 +103,31 @@ internal class FetchAndCacheIssuerDisplayDataImpl @Inject constructor(
         }
     }
 
-    private suspend fun evaluateVeranaTrust(
-        anyCredentials: List<AnyCredential>,
-    ): VeranaTrustEvidence {
-        val issuerDids = anyCredentials.map { it.issuer.trim() }.toSet()
-        val schemaIds = anyCredentials.map { it.vcSchemaId.trim() }
-        val distinctSchemaIds = schemaIds.filter { it.isNotBlank() }.toSet()
-        val issuerDid = issuerDids.singleOrNull()
-        val hasValidIssuer = issuerDid != null && issuerDid.isNotBlank()
-        val hasValidSchemas = schemaIds.isNotEmpty() && schemaIds.none { it.isBlank() }
+    private suspend fun evaluateVeranaTrust(anyCredentials: List<AnyCredential>): VeranaTrustEvidence? {
+        val issuers = anyCredentials.map { it.issuer }.distinct()
+        val issuerDid = issuers.firstOrNull { it.startsWith(DID_PREFIX) } ?: return null
+        val vcSdJwts = anyCredentials.map { it as? VcSdJwt }
+        val vcts = vcSdJwts.map { it?.vct }.distinct()
+        val certificateKeys = vcSdJwts.map { credential -> credential?.takeIf { it.isX5cIssuerKey }?.x5cPublicKey }.distinct()
 
-        return if (hasValidIssuer && hasValidSchemas) {
-            evaluateVeranaTrust(
+        if (issuers.size != 1 || vcts.size != 1 || certificateKeys.size != 1) {
+            return VeranaTrustEvidence(
                 role = VeranaTrustRole.ISSUER,
-                did = requireNotNull(issuerDid),
-                vcSchemaIds = distinctSchemaIds,
-                vtjscIds = anyCredentials.resolveVtjscIds(),
-            )
-        } else {
-            VeranaTrustEvidence(
-                role = VeranaTrustRole.ISSUER,
-                did = issuerDid.orEmpty(),
-                vcSchemaIds = distinctSchemaIds.sorted(),
-                verdict = VeranaTrustVerdict.UNVERIFIED,
-                summary = null,
-                authorizations = emptyList(),
+                did = issuerDid,
+                vct = vcts.singleOrNull(),
+                resolution = VeranaTrustResolution.unresolved(issuerDid, VeranaTrustStatus.UNVERIFIED),
+                accreditation = null,
             )
         }
+        return evaluateVeranaTrust(
+            role = VeranaTrustRole.ISSUER,
+            did = issuerDid,
+            vct = vcts.single(),
+            certificateKey = certificateKeys.single(),
+        )
     }
 
-    private suspend fun VeranaTrustEvidence.withResolvedCredentials(): VeranaTrustEvidence {
-        val summary = summary ?: return this
-        return when (val result = fetchVeranaTrustDetails(this)) {
-            is VeranaResolverResult.Success ->
-                if (result.value.summary == summary) copy(credentials = result.value.credentials) else this
-
-            VeranaResolverResult.NotFound,
-            VeranaResolverResult.Unavailable -> this
-        }
-    }
-
-    // A single unresolvable credential turns the whole authorization check into could-not-determine.
-    private suspend fun List<AnyCredential>.resolveVtjscIds(): Set<String> {
-        val resolved = map { credential ->
-            (credential as? VcSdJwt)?.credentialSchemaId to ((credential as? VcSdJwt)?.vct ?: credential.vcSchemaId)
-        }
-            .distinct()
-            .map { (credentialSchemaId, vct) -> resolveVtjscIdFromVct(credentialSchemaId, vct) }
-        return if (resolved.any { it == null }) emptySet() else resolved.filterNotNull().toSet()
+    private companion object {
+        const val DID_PREFIX = "did:"
     }
 }

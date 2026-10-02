@@ -1,6 +1,5 @@
 package ch.admin.foitt.wallet.platform.actorMetadata.domain.usecase.implementation
 
-import ch.admin.foitt.openid4vc.domain.model.anycredential.AnyCredential
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientMetaData
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwt
@@ -27,12 +26,8 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.FetchVcSchema
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.usecase.ProcessIdentityV1TrustStatement
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerifierTrustContext
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.EvaluateVeranaTrust
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.FetchVeranaTrustDetails
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVtjscIdFromVct
 import com.github.michaelbull.result.get
 import com.github.michaelbull.result.getOrElse
 import timber.log.Timber
@@ -47,8 +42,6 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
     private val initializeActorForScope: InitializeActorForScope,
     private val getAllAnyCredentialsByCredentialId: GetAllAnyCredentialsByCredentialId,
     private val evaluateVeranaTrust: EvaluateVeranaTrust,
-    private val resolveVtjscIdFromVct: ResolveVtjscIdFromVct,
-    private val fetchVeranaTrustDetails: FetchVeranaTrustDetails,
     private val actorUpdateGate: ActorUpdateGate,
 ) : FetchAndCacheVerifierDisplayData {
     override suspend fun invoke(
@@ -90,7 +83,7 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
 
         val nonComplianceData = fetchNonComplianceData(actorDid = authorizationRequest.clientId)
         val nonComplianceReason: List<ActorField<String>>? = nonComplianceData.reasonDisplays?.toNonComplianceReason()
-        val veranaTrustEvidence = evaluateVeranaTrust(veranaTrustContext)?.withResolvedCredentials()
+        val veranaTrustEvidence = evaluateVeranaTrust(veranaTrustContext, authorizationRequest)
 
         val presentationVerifierDisplay = ActorDisplayData(
             name = verifierTrustNameDisplay,
@@ -156,58 +149,27 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
 
     private suspend fun evaluateVeranaTrust(
         context: VeranaVerifierTrustContext?,
+        authorizationRequest: AuthorizationRequest,
     ): VeranaTrustEvidence? {
         context ?: return null
+        val verifierDid = context.authenticatedVerifierDid.takeIf { it.startsWith(DID_PREFIX) } ?: return null
 
-        val verifierDid = context.authenticatedVerifierDid
-        val credentials = getAllAnyCredentialsByCredentialId(context.credentialId).get()
-        val schemaIds = credentials.orEmpty().map { it.vcSchemaId.trim() }
-        val distinctSchemaIds = schemaIds.filter { it.isNotBlank() }.toSet()
-        val hasValidDid = verifierDid.isNotBlank() &&
-            verifierDid == verifierDid.trim() &&
-            verifierDid.startsWith("did:")
-        val hasValidSchemas = credentials != null &&
-            schemaIds.isNotEmpty() &&
-            schemaIds.none { it.isBlank() }
-
-        return if (hasValidDid && hasValidSchemas) {
-            evaluateVeranaTrust(
-                role = VeranaTrustRole.VERIFIER,
-                did = verifierDid,
-                vcSchemaIds = distinctSchemaIds,
-                vtjscIds = credentials.orEmpty().resolveVtjscIds(),
-            )
-        } else {
-            VeranaTrustEvidence(
-                role = VeranaTrustRole.VERIFIER,
-                did = verifierDid,
-                vcSchemaIds = distinctSchemaIds.sorted(),
-                verdict = VeranaTrustVerdict.UNVERIFIED,
-                summary = null,
-                authorizations = emptyList(),
-            )
-        }
+        return evaluateVeranaTrust(
+            role = VeranaTrustRole.VERIFIER,
+            did = verifierDid,
+            vct = requestedVct(authorizationRequest, context.credentialId),
+            certificateKey = context.certificateKey,
+        )
     }
 
-    private suspend fun VeranaTrustEvidence.withResolvedCredentials(): VeranaTrustEvidence {
-        val summary = summary ?: return this
-        return when (val result = fetchVeranaTrustDetails(this)) {
-            is VeranaResolverResult.Success ->
-                if (result.value.summary == summary) copy(credentials = result.value.credentials) else this
-
-            VeranaResolverResult.NotFound,
-            VeranaResolverResult.Unavailable -> this
-        }
-    }
-
-    // A single unresolvable credential turns the whole authorization check into could-not-determine.
-    private suspend fun List<AnyCredential>.resolveVtjscIds(): Set<String> {
-        val resolved = map { credential ->
-            (credential as? VcSdJwt)?.credentialSchemaId to ((credential as? VcSdJwt)?.vct ?: credential.vcSchemaId)
-        }
+    private suspend fun requestedVct(authorizationRequest: AuthorizationRequest, credentialId: Long): String? {
+        val requestedVcts = authorizationRequest.dcqlQuery?.credentials.orEmpty()
+            .flatMap { credentialQuery -> (credentialQuery.meta as? Meta.SdjwtVc)?.vctValues.orEmpty() }
             .distinct()
-            .map { (credentialSchemaId, vct) -> resolveVtjscIdFromVct(credentialSchemaId, vct) }
-        return if (resolved.any { it == null }) emptySet() else resolved.filterNotNull().toSet()
+        requestedVcts.singleOrNull()?.let { return it }
+
+        val sharedVcts = getAllAnyCredentialsByCredentialId(credentialId).get().orEmpty().mapNotNull { (it as? VcSdJwt)?.vct }
+        return sharedVcts.firstOrNull { it in requestedVcts }
     }
 
     private fun ClientMetaData.toVerifierName(): List<ActorField<String>> = clientNameList.map { entry ->
@@ -284,5 +246,9 @@ internal class FetchAndCacheVerifierDisplayDataImpl @Inject constructor(
             value = entry.reason,
             locale = entry.locale,
         )
+    }
+
+    private companion object {
+        const val DID_PREFIX = "did:"
     }
 }

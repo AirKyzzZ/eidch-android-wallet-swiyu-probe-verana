@@ -5,8 +5,9 @@ import ch.admin.foitt.wallet.platform.actorMetadata.presentation.adapter.impleme
 import ch.admin.foitt.wallet.platform.composables.presentation.adapter.GetDrawableFromUri
 import ch.admin.foitt.wallet.platform.locale.domain.usecase.GetLocalizedDisplay
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import io.mockk.MockKAnnotations
 import io.mockk.impl.annotations.MockK
 import io.mockk.unmockkAll
@@ -42,10 +43,9 @@ class GetActorUiStateImplTest {
         val evidence = VeranaTrustEvidence(
             role = VeranaTrustRole.ISSUER,
             did = "did:web:issuer.example",
-            vcSchemaIds = listOf("https://schemas.example/credential"),
-            verdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
-            summary = null,
-            authorizations = emptyList(),
+            vct = "https://schemas.example/credential",
+            resolution = VeranaTrustResolution(did = "did:web:issuer.example", status = VeranaTrustStatus.TRUSTED),
+            accreditation = null,
         )
         val actor = ActorDisplayData.EMPTY.copy(
             name = null,

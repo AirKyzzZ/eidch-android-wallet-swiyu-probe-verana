@@ -18,8 +18,9 @@ import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustCheckResul
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.TrustStatus
 import ch.admin.foitt.wallet.platform.trustRegistry.domain.model.VcSchemaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import io.mockk.MockKAnnotations
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -279,10 +280,9 @@ class CacheIssuerDisplayDataImplTest {
         val evidence = VeranaTrustEvidence(
             role = VeranaTrustRole.ISSUER,
             did = "did:web:issuer.example",
-            vcSchemaIds = listOf("https://schemas.example/credential"),
-            verdict = VeranaTrustVerdict.TRUSTED_AUTHORIZED,
-            summary = null,
-            authorizations = emptyList(),
+            vct = "https://schemas.example/credential",
+            resolution = VeranaTrustResolution(did = "did:web:issuer.example", status = VeranaTrustStatus.TRUSTED),
+            accreditation = null,
         )
 
         useCase(trustCheckResult, credentialIssuerDisplays, nonComplianceData, evidence)

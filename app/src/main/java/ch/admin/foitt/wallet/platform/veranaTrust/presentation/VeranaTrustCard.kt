@@ -47,11 +47,15 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.EcsAssetRef
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.EcsClaimReader
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.EcsOrganization
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.EcsService
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.EcsVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VERANA_NETWORKS
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustCredential
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaUntrustedReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.canRetry
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.networkLabel
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletTheme
 
@@ -61,7 +65,7 @@ import ch.admin.foitt.wallet.theme.WalletTheme
 fun VeranaTrustCard(
     evidence: VeranaTrustEvidence?,
     onOpenDetails: (() -> Unit)?,
-    onRetry: () -> Unit,
+    onRetry: (() -> Unit)?,
     modifier: Modifier = Modifier,
     isLoading: Boolean = false,
     partyName: String? = null,
@@ -110,31 +114,26 @@ private fun CardContent(
     evidence: VeranaTrustEvidence,
     partyName: String?,
     credentialName: String?,
-    onRetry: () -> Unit,
+    onRetry: (() -> Unit)?,
 ) {
     val verdict = evidence.cardVerdict()
-    val credentials = evidence.credentials
+    val credentials = evidence.resolution.credentials
     val serviceCredential = EcsClaimReader.findServiceCredential(credentials)
     val organizationCredential = EcsClaimReader.findOrganizationCredential(credentials)
     val serviceTone = rowTone(verdict, serviceCredential)
     val organizationTone = rowTone(verdict, organizationCredential)
-    val serviceWithheld = EcsClaimReader.isSelfIssued(serviceCredential, evidence.did)
-    val organizationWithheld = EcsClaimReader.isSelfIssued(organizationCredential, evidence.did)
-    val service = if (serviceTone == StepTone.OK && !serviceWithheld) {
-        EcsClaimReader.readEcsService(serviceCredential)
-    } else {
-        null
-    }
-    val organization = if (organizationTone == StepTone.OK && !organizationWithheld) {
+    val service = if (serviceTone == StepTone.OK) EcsClaimReader.readEcsService(serviceCredential) else null
+    val organization = if (organizationTone == StepTone.OK) {
         EcsClaimReader.readEcsOrganization(organizationCredential)
     } else {
         null
     }
+    val networkLabel = (evidence.resolution.network?.let(::listOf) ?: VERANA_NETWORKS).networkLabel()
 
     DidRow(
         did = evidence.did,
         verdict = verdict,
-        isTestnet = evidence.summary?.production == false,
+        networkLabel = networkLabel,
     )
 
     if (credentials.isNotEmpty()) {
@@ -150,7 +149,7 @@ private fun CardContent(
                             "No ECS-Service credential presented"
                         },
                         tone = serviceTone,
-                        copy = withheldCopy(serviceCredential, serviceTone, evidence.did),
+                        copy = withheldCopy(serviceCredential, serviceTone),
                     )
                 }
             }
@@ -165,7 +164,7 @@ private fun CardContent(
                             "No ECS-Organization credential presented"
                         },
                         tone = organizationTone,
-                        copy = withheldCopy(organizationCredential, organizationTone, evidence.did)
+                        copy = withheldCopy(organizationCredential, organizationTone)
                             ?: "Nothing verifies who operates this service",
                     )
                 }
@@ -175,20 +174,28 @@ private fun CardContent(
 
     VerdictPill(
         verdict = verdict,
-        note = verdictNote(evidence, verdict, credentials),
+        note = verdictNote(evidence),
     )
+
+    evidence.resolution.evaluatedAt?.let { evaluatedAt ->
+        Text(
+            text = "Checked $evaluatedAt",
+            style = WalletTheme.typography.bodySmall,
+            color = CardPalette.grey500,
+        )
+    }
 
     AskBlock(
         evidence = evidence,
         party = service?.name ?: partyName ?: evidence.did.middleTruncated(),
-        credentialLabel = credentialName ?: "this credential",
+        credentialLabel = evidence.accreditation?.credentialName ?: credentialName ?: "this credential",
     )
 
     if (service?.terms != null || service?.privacy != null || service?.minimumAgeRequired != null) {
         ConditionsBlock(service)
     }
 
-    if (evidence.verdict == VeranaTrustVerdict.RESOLVER_UNAVAILABLE) {
+    if (onRetry != null && evidence.canRetry) {
         Text(
             text = stringResource(R.string.verana_trust_retry),
             style = WalletTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -199,6 +206,14 @@ private fun CardContent(
                 .padding(vertical = Sizes.s01),
         )
     }
+
+    if (networkLabel != null) {
+        Text(
+            text = "Demo network - do not share real data",
+            style = WalletTheme.typography.bodySmall,
+            color = CardPalette.grey500,
+        )
+    }
 }
 
 @Composable
@@ -206,7 +221,7 @@ private fun LoadingRow(did: String?) = Column(
     verticalArrangement = Arrangement.spacedBy(Sizes.s04),
 ) {
     did?.let {
-        DidRow(did = it, verdict = CardVerdict.RESOLVING, isTestnet = false)
+        DidRow(did = it, verdict = CardVerdict.RESOLVING, networkLabel = null)
     } ?: Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Sizes.s03),
@@ -229,7 +244,7 @@ private fun LoadingRow(did: String?) = Column(
 private fun DidRow(
     did: String,
     verdict: CardVerdict,
-    isTestnet: Boolean,
+    networkLabel: String?,
 ) = Row(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(Sizes.s02),
@@ -246,9 +261,9 @@ private fun DidRow(
         maxLines = 1,
         modifier = Modifier.weight(1f),
     )
-    if (isTestnet) {
+    networkLabel?.let { label ->
         Text(
-            text = "TESTNET",
+            text = label,
             style = WalletTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
             color = CardPalette.warning,
             modifier = Modifier
@@ -538,7 +553,7 @@ private fun VerdictPill(
             style = WalletTheme.typography.bodySmall,
             color = when (verdict) {
                 CardVerdict.RESOLVING, CardVerdict.TRUSTED, CardVerdict.UNVERIFIED -> CardPalette.grey600
-                CardVerdict.PARTIAL, CardVerdict.UNTRUSTED -> CardPalette.dangerDark
+                CardVerdict.UNTRUSTED -> CardPalette.dangerDark
             },
         )
     }
@@ -550,7 +565,13 @@ private fun AskBlock(
     party: String,
     credentialLabel: String,
 ) {
-    val granted = evidence.askGranted()
+    val accreditation = evidence.accreditation
+    val granted = when (accreditation?.status) {
+        VeranaAccreditationStatus.GRANTED -> true
+        VeranaAccreditationStatus.REFUSED -> false
+        VeranaAccreditationStatus.UNDETERMINED, null -> null
+    }
+    val inEcosystem = accreditation?.ecosystemName?.let { " in $it" }.orEmpty()
     val borderColor = when (granted) {
         true -> CardPalette.positive
         false -> CardPalette.danger
@@ -605,8 +626,8 @@ private fun AskBlock(
             }
             Text(
                 text = when (granted) {
-                    true -> "$party is an authorized $verb of $credentialLabel"
-                    false -> "$party is not an authorized $verb of $credentialLabel"
+                    true -> "$party is an authorized $verb of $credentialLabel$inEcosystem"
+                    false -> "$party is not an authorized $verb of $credentialLabel$inEcosystem"
                     null -> "This could not be checked against the registry."
                 },
                 style = WalletTheme.typography.bodyMedium,
@@ -758,7 +779,6 @@ private enum class CardVerdict(
 ) {
     RESOLVING("CHECKING…", CardPalette.grey500),
     TRUSTED("TRUSTED", CardPalette.positive),
-    PARTIAL("PARTIAL", CardPalette.warning),
     UNTRUSTED("UNTRUSTED", CardPalette.danger),
     UNVERIFIED("COULD NOT VERIFY", CardPalette.grey500),
 }
@@ -772,59 +792,41 @@ private enum class StepTone(
     NONE(CardPalette.grey400, CardPalette.grey300),
 }
 
-// [UW-POT-5] The pill follows the resolution's own trust status, never a wallet-side guess.
-private fun VeranaTrustEvidence.cardVerdict(): CardVerdict = when (summary?.trustStatus) {
-    "TRUSTED" -> CardVerdict.TRUSTED
-    "PARTIAL" -> CardVerdict.PARTIAL
-    "UNTRUSTED" -> CardVerdict.UNTRUSTED
-    else -> CardVerdict.UNVERIFIED
+private fun VeranaTrustEvidence.cardVerdict(): CardVerdict = when (resolution.status) {
+    VeranaTrustStatus.TRUSTED -> CardVerdict.TRUSTED
+    VeranaTrustStatus.UNTRUSTED -> CardVerdict.UNTRUSTED
+    VeranaTrustStatus.UNVERIFIED -> CardVerdict.UNVERIFIED
 }
 
 private fun rowTone(verdict: CardVerdict, credential: VeranaTrustCredential?): StepTone = when {
     verdict == CardVerdict.UNVERIFIED -> StepTone.NONE
-    verdict == CardVerdict.UNTRUSTED -> StepTone.BAD
-    credential?.result == "VALID" -> StepTone.OK
+    verdict == CardVerdict.TRUSTED && credential != null -> StepTone.OK
     else -> StepTone.BAD
 }
 
 private fun withheldCopy(
     credential: VeranaTrustCredential?,
     tone: StepTone,
-    did: String,
 ): String? = when {
     tone == StepTone.NONE -> "Not checked."
     credential == null -> null
-    EcsClaimReader.isSelfIssued(credential, did) -> "Issued by this service to itself, so nothing independent verifies it."
     else -> "Nothing in the registry vouches for this credential, so its claims are not shown."
 }
 
-private fun verdictNote(
-    evidence: VeranaTrustEvidence,
-    verdict: CardVerdict,
-    credentials: List<VeranaTrustCredential>,
-): String? = when {
-    verdict == CardVerdict.UNVERIFIED && evidence.verdict == VeranaTrustVerdict.RESOLVER_UNAVAILABLE ->
-        "The Verana resolver could not be reached. This counterparty is neither trusted nor untrusted."
+private fun verdictNote(evidence: VeranaTrustEvidence): String = when (evidence.resolution.status) {
+    VeranaTrustStatus.UNVERIFIED ->
+        "The Verana registry could not be reached. This counterparty is neither trusted nor untrusted."
 
-    verdict == CardVerdict.UNVERIFIED ->
-        "This counterparty could not be verified against the Verana registry. It is neither trusted nor untrusted."
+    VeranaTrustStatus.TRUSTED -> "The Verana public registry trusts this service."
+    VeranaTrustStatus.UNTRUSTED -> when (evidence.resolution.reason) {
+        VeranaUntrustedReason.NO_DID_DOCUMENT -> "This service cannot present verifiable trust credentials."
+        VeranaUntrustedReason.NOT_REGISTERED -> "The Verana public registry does not know this service."
+        VeranaUntrustedReason.ECOSYSTEM_NOT_TRUSTED ->
+            "Only ecosystems this wallet does not accept vouch for this service."
 
-    credentials.isNotEmpty() -> EcsClaimReader.describeVerdict(verdict.toEcsVerdict(), credentials)
-
-    else -> null
-}
-
-private fun CardVerdict.toEcsVerdict(): EcsVerdict = when (this) {
-    CardVerdict.TRUSTED -> EcsVerdict.TRUSTED
-    CardVerdict.PARTIAL -> EcsVerdict.PARTIAL
-    CardVerdict.RESOLVING, CardVerdict.UNTRUSTED, CardVerdict.UNVERIFIED -> EcsVerdict.UNTRUSTED
-}
-
-private fun VeranaTrustEvidence.askGranted(): Boolean? = when {
-    verdict == VeranaTrustVerdict.TRUSTED_AUTHORIZED && authorizations.isNotEmpty() -> true
-    verdict == VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED -> false
-    authorizations.isNotEmpty() -> authorizations.all { it.authorized }
-    else -> null
+        VeranaUntrustedReason.DID_NOT_PROVEN -> "This service could not prove that it controls this DID."
+        VeranaUntrustedReason.NOT_TRUSTED, null -> "The Verana public registry does not vouch for this service."
+    }
 }
 
 private fun String.middleTruncated(maxLength: Int = 40): String =

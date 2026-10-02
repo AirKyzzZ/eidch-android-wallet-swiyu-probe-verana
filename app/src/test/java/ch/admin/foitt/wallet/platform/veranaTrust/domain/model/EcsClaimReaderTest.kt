@@ -1,9 +1,7 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.domain.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class EcsClaimReaderTest {
@@ -12,7 +10,7 @@ class EcsClaimReaderTest {
     fun `service claims read the v4 shape with digests`() {
         val service = EcsClaimReader.readEcsService(
             credential(
-                ecsType = "ECS-SERVICE",
+                ecsSchema = "ServiceCredential",
                 claims = listOf(
                     claim("name", "Acme Service"),
                     claim("description", "A service"),
@@ -37,76 +35,33 @@ class EcsClaimReaderTest {
     }
 
     @Test
-    fun `service claims fall back to the v3 shape with hashes`() {
-        val service = EcsClaimReader.readEcsService(
+    fun `organization claims read the v4 shape`() {
+        val organization = EcsClaimReader.readEcsOrganization(
             credential(
-                ecsType = "ECS-SERVICE",
+                ecsSchema = "OrganizationCredential",
                 claims = listOf(
-                    claim("termsAndConditions", "https://acme.example/terms"),
-                    claim("termsAndConditionsHash", "hash-terms"),
-                    claim("logo", "https://acme.example/logo.png"),
+                    claim("name", "Playground Organization (demo)"),
+                    claim("countryCode", "ch"),
+                    claim("registryId", "CHE-123"),
                 ),
             )
         )
 
-        requireNotNull(service)
-        assertEquals(EcsAssetRef("https://acme.example/terms", "hash-terms"), service.terms)
-        assertEquals(EcsAssetRef("https://acme.example/logo.png"), service.logo)
+        requireNotNull(organization)
+        assertEquals("Playground Organization (demo)", organization.name)
+        assertEquals("CH", organization.countryCode)
+        assertEquals("CHE-123", organization.registryId)
     }
 
     @Test
-    fun `a credential that did not verify reads no claims`() {
-        assertNull(EcsClaimReader.readEcsService(credential(ecsType = "ECS-SERVICE", result = "FAILED")))
-        assertNull(EcsClaimReader.readEcsOrganization(credential(ecsType = "ECS-ORG", result = "IGNORED")))
-    }
+    fun `credentials are found by their v4 ECS schema`() {
+        val service = credential(ecsSchema = "ServiceCredential")
+        val persona = credential(ecsSchema = "PersonaCredential")
 
-    @Test
-    fun `verdict follows the two mandatory identity credentials`() {
-        val service = credential(ecsType = "ECS-SERVICE")
-        val organization = credential(ecsType = "ECS-ORG")
-
-        assertEquals(EcsVerdict.TRUSTED, EcsClaimReader.deriveVerdict(listOf(service, organization)))
-        assertEquals(EcsVerdict.PARTIAL, EcsClaimReader.deriveVerdict(listOf(service)))
-        assertEquals(EcsVerdict.UNTRUSTED, EcsClaimReader.deriveVerdict(emptyList()))
-        assertEquals(
-            EcsVerdict.UNTRUSTED,
-            EcsClaimReader.deriveVerdict(listOf(service.copy(result = "FAILED"), organization.copy(result = "FAILED"))),
-        )
-    }
-
-    @Test
-    fun `verdict wording is the versioned card wording`() {
-        val service = credential(ecsType = "ECS-SERVICE")
-        val organization = credential(ecsType = "ECS-ORG")
-
-        assertEquals(
-            "Both identity credentials verified against the Verana public registry",
-            EcsClaimReader.describeVerdict(EcsVerdict.TRUSTED, listOf(service, organization)),
-        )
-        assertEquals(
-            "The Verana public registry does not vouch for this service.",
-            EcsClaimReader.describeVerdict(EcsVerdict.UNTRUSTED, listOf(service)),
-        )
-        assertEquals(
-            "Neither identity credential verified. This counterparty cannot present verifiable trust credentials.",
-            EcsClaimReader.describeVerdict(EcsVerdict.UNTRUSTED, emptyList()),
-        )
-        assertEquals(
-            "The service credential verified. Nothing verifies who operates it.",
-            EcsClaimReader.describeVerdict(EcsVerdict.PARTIAL, listOf(service)),
-        )
-        assertEquals(
-            "The operator credential verified. Nothing verifies the service itself.",
-            EcsClaimReader.describeVerdict(EcsVerdict.PARTIAL, listOf(organization)),
-        )
-    }
-
-    @Test
-    fun `self issuance compares the issuer DID without the key fragment`() {
-        val credential = credential(ecsType = "ECS-SERVICE", issuedBy = "$DID#key-1")
-
-        assertTrue(EcsClaimReader.isSelfIssued(credential, DID))
-        assertFalse(EcsClaimReader.isSelfIssued(credential, "did:web:other.example"))
+        assertEquals(service, EcsClaimReader.findServiceCredential(listOf(persona, service)))
+        assertEquals(persona, EcsClaimReader.findOrganizationCredential(listOf(service, persona)))
+        assertNull(EcsClaimReader.findServiceCredential(listOf(credential(ecsSchema = "ECS-SERVICE"))))
+        assertNull(EcsClaimReader.readEcsService(null))
     }
 
     @Test
@@ -122,28 +77,16 @@ class EcsClaimReaderTest {
     }
 
     private fun credential(
-        ecsType: String?,
-        result: String = "VALID",
-        issuedBy: String = "did:web:ecosystem.example",
+        ecsSchema: String,
         claims: List<VeranaTrustClaim> = emptyList(),
     ) = VeranaTrustCredential(
-        result = result,
-        ecsType = ecsType,
-        presentedBy = DID,
-        issuedBy = issuedBy,
-        id = "urn:uuid:credential",
-        type = "VerifiableTrustCredential",
-        format = "W3C_VTC",
+        ecsSchema = ecsSchema,
+        ecosystemId = 3L,
         claims = claims,
-        permissionChain = emptyList(),
     )
 
     private fun claim(name: String, value: String) = VeranaTrustClaim(
         name = name,
         values = listOf(value),
     )
-
-    private companion object {
-        const val DID = "did:web:acme.example"
-    }
 }

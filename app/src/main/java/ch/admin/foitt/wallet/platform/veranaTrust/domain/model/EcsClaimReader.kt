@@ -30,12 +30,6 @@ data class EcsOrganization(
     val lei: String? = null,
 )
 
-enum class EcsVerdict {
-    TRUSTED,
-    PARTIAL,
-    UNTRUSTED,
-}
-
 data class StrippedDescription(
     val text: String,
     val removed: Int,
@@ -44,14 +38,13 @@ data class StrippedDescription(
 object EcsClaimReader {
 
     fun findServiceCredential(credentials: List<VeranaTrustCredential>?): VeranaTrustCredential? =
-        findEcsCredential(credentials, SERVICE_ECS_TYPES)
+        credentials?.firstOrNull { it.ecsSchema in SERVICE_SCHEMAS }
 
     fun findOrganizationCredential(credentials: List<VeranaTrustCredential>?): VeranaTrustCredential? =
-        findEcsCredential(credentials, ORGANIZATION_ECS_TYPES)
+        credentials?.firstOrNull { it.ecsSchema in ORGANIZATION_SCHEMAS }
 
-    // Claims render as facts only from credentials the resolver verified.
     fun readEcsService(credential: VeranaTrustCredential?): EcsService? {
-        credential?.takeIf { it.isValid() } ?: return null
+        credential ?: return null
 
         val format = credential.claim("descriptionFormat")
         return EcsService(
@@ -60,25 +53,20 @@ object EcsClaimReader {
             type = credential.claim("type"),
             description = credential.claim("description"),
             descriptionFormat = if (format == "text/markdown") "text/markdown" else "text/plain",
-            logo = credential.asset("logoUri", "logoDigestSri", "logo"),
+            logo = credential.asset("logoUri", "logoDigestSri"),
             minimumAgeRequired = credential.claim("minimumAgeRequired")?.toIntOrNull(),
-            terms = credential.asset(
-                "termsAndConditionsUri",
-                "termsAndConditionsDigestSri",
-                "termsAndConditions",
-                "termsAndConditionsHash",
-            ),
-            privacy = credential.asset("privacyPolicyUri", "privacyPolicyDigestSri", "privacyPolicy", "privacyPolicyHash"),
+            terms = credential.asset("termsAndConditionsUri", "termsAndConditionsDigestSri"),
+            privacy = credential.asset("privacyPolicyUri", "privacyPolicyDigestSri"),
         )
     }
 
     fun readEcsOrganization(credential: VeranaTrustCredential?): EcsOrganization? {
-        credential?.takeIf { it.isValid() } ?: return null
+        credential ?: return null
 
         return EcsOrganization(
             id = credential.claim("id"),
             name = credential.claim("name"),
-            logo = credential.asset("logoUri", "logoDigestSri", "logo"),
+            logo = credential.asset("logoUri", "logoDigestSri"),
             registryId = credential.claim("registryId"),
             address = credential.claim("address"),
             countryCode = credential.claim("countryCode")?.uppercase(),
@@ -88,38 +76,6 @@ object EcsClaimReader {
             lei = credential.claim("lei"),
         )
     }
-
-    fun deriveVerdict(credentials: List<VeranaTrustCredential>?): EcsVerdict {
-        val service = findServiceCredential(credentials).isValid()
-        val organization = findOrganizationCredential(credentials).isValid()
-
-        return when {
-            service && organization -> EcsVerdict.TRUSTED
-            service || organization -> EcsVerdict.PARTIAL
-            else -> EcsVerdict.UNTRUSTED
-        }
-    }
-
-    // Wording is fixed by the versioned card at playground/public/trust-card/index.html.
-    fun describeVerdict(verdict: EcsVerdict, credentials: List<VeranaTrustCredential>?): String = when (verdict) {
-        EcsVerdict.TRUSTED -> "Both identity credentials verified against the Verana public registry"
-        EcsVerdict.UNTRUSTED ->
-            if (findServiceCredential(credentials).isValid() || findOrganizationCredential(credentials).isValid()) {
-                "The Verana public registry does not vouch for this service."
-            } else {
-                "Neither identity credential verified. This counterparty cannot present verifiable trust credentials."
-            }
-
-        EcsVerdict.PARTIAL ->
-            if (findServiceCredential(credentials).isValid()) {
-                "The service credential verified. Nothing verifies who operates it."
-            } else {
-                "The operator credential verified. Nothing verifies the service itself."
-            }
-    }
-
-    fun isSelfIssued(credential: VeranaTrustCredential?, did: String): Boolean =
-        credential?.issuedBy?.substringBefore('#') == did
 
     fun stripLinks(description: String?): StrippedDescription {
         if (description.isNullOrEmpty()) return StrippedDescription(text = "", removed = 0)
@@ -140,29 +96,16 @@ object EcsClaimReader {
         )
     }
 
-    private fun findEcsCredential(
-        credentials: List<VeranaTrustCredential>?,
-        ecsTypes: Set<String>,
-    ): VeranaTrustCredential? = credentials?.firstOrNull { it.ecsType in ecsTypes }
-
-    private fun VeranaTrustCredential?.isValid(): Boolean = this?.result == "VALID"
-
     private fun VeranaTrustCredential.claim(name: String): String? =
         claims.firstOrNull { it.name == name }?.values?.singleOrNull()?.takeIf { it.isNotEmpty() }
 
-    private fun VeranaTrustCredential.asset(
-        v4Uri: String,
-        v4Digest: String,
-        v3Uri: String,
-        v3Digest: String? = null,
-    ): EcsAssetRef? {
-        val uri = claim(v4Uri) ?: claim(v3Uri) ?: return null
-        val digest = claim(v4Digest) ?: v3Digest?.let { claim(it) }
-        return EcsAssetRef(uri = uri, digest = digest)
+    private fun VeranaTrustCredential.asset(uriClaim: String, digestClaim: String): EcsAssetRef? {
+        val uri = claim(uriClaim) ?: return null
+        return EcsAssetRef(uri = uri, digest = claim(digestClaim))
     }
 
-    private val SERVICE_ECS_TYPES = setOf("ECS-SERVICE")
-    private val ORGANIZATION_ECS_TYPES = setOf("ECS-ORG", "ECS-ORGANIZATION", "ECS-PERSONA")
+    private val SERVICE_SCHEMAS = setOf("ServiceCredential")
+    private val ORGANIZATION_SCHEMAS = setOf("OrganizationCredential", "PersonaCredential")
     private val MARKDOWN_LINK = Regex("""\[([^\]]*)]\(([^)]*)\)""")
     private val BARE_URL = Regex("""\bhttps?://\S+""", RegexOption.IGNORE_CASE)
     private val MULTI_WHITESPACE = Regex("""\s{2,}""")

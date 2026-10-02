@@ -1,22 +1,30 @@
 package ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.implementation
 
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAuthorizationEvidence
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaResolverResult
+import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaDidKeyBinding
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustEvidence
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustResolution
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustSummary
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustVerdict
-import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaTrustResolverRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaUntrustedReason
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.blocksAccept
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.canRetry
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.CheckVeranaAccreditation
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.ResolveVeranaTrust
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.usecase.VerifyVeranaDidKeyBinding
 import io.mockk.MockKAnnotations
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.coVerifySequence
-import io.mockk.confirmVerified
 import io.mockk.impl.annotations.MockK
 import io.mockk.unmockkAll
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -24,26 +32,24 @@ import org.junit.jupiter.api.Test
 class EvaluateVeranaTrustImplTest {
 
     @MockK
-    private lateinit var repository: VeranaTrustResolverRepository
+    private lateinit var verifyBinding: VerifyVeranaDidKeyBinding
+
+    @MockK
+    private lateinit var resolveVeranaTrust: ResolveVeranaTrust
+
+    @MockK
+    private lateinit var checkAccreditation: CheckVeranaAccreditation
 
     private lateinit var useCase: EvaluateVeranaTrustImpl
 
     @BeforeEach
     fun setUp() {
         MockKAnnotations.init(this)
-        useCase = EvaluateVeranaTrustImpl(repository)
+        useCase = EvaluateVeranaTrustImpl(verifyBinding, resolveVeranaTrust, checkAccreditation)
 
-        coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.Success(trustedSummary())
-        coEvery {
-            repository.fetchAuthorization(any(), DID, any())
-        } answers {
-            VeranaResolverResult.Success(
-                authorization(
-                    schemaId = thirdArg(),
-                    authorized = true,
-                )
-            )
-        }
+        coEvery { verifyBinding(DID, any(), KEY) } returns VeranaDidKeyBinding.PROVEN
+        coEvery { resolveVeranaTrust(DID) } returns resolution(VeranaTrustStatus.TRUSTED)
+        coEvery { checkAccreditation(DID, any(), VCT) } returns accreditation(VeranaAccreditationStatus.GRANTED)
     }
 
     @AfterEach
@@ -52,259 +58,110 @@ class EvaluateVeranaTrustImplTest {
     }
 
     @Test
-    fun `trusted DID with every issuer schema authorized is positive`() = runTest {
-        val result = useCase(
-            role = VeranaTrustRole.ISSUER,
-            did = DID,
-            vcSchemaIds = setOf(SCHEMA_B, SCHEMA_A),
-            vtjscIds = setOf(SCHEMA_B, SCHEMA_A),
-        )
+    fun `trusted and granted opens the gate`() = runTest {
+        val evidence = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-        assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
-        assertEquals(listOf(SCHEMA_A, SCHEMA_B), result.vcSchemaIds)
-        assertEquals(listOf(SCHEMA_A, SCHEMA_B), result.authorizations.map { it.vcSchemaId })
-        assertEquals(DID, result.did)
-        assertEquals(VeranaTrustRole.ISSUER, result.role)
-        assertEquals(RESOLVER_URL, result.resolverUrl)
-        coVerifySequence {
-            repository.fetchSummary(DID)
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_B)
-        }
+        assertEquals(VeranaTrustStatus.TRUSTED, evidence.resolution.status)
+        assertEquals(VeranaAccreditationStatus.GRANTED, evidence.accreditation?.status)
+        assertEquals(VCT, evidence.vct)
+        assertFalse(evidence.blocksAccept)
+        assertFalse(evidence.canRetry)
     }
 
     @Test
-    fun `trusted DID with every verifier schema authorized is positive`() = runTest {
-        val result = useCase(
-            role = VeranaTrustRole.VERIFIER,
-            did = DID,
-            vcSchemaIds = setOf(SCHEMA_A),
-            vtjscIds = setOf(SCHEMA_A),
-        )
+    fun `trusted but refused keeps the gate closed without a retry`() = runTest {
+        coEvery { checkAccreditation(DID, any(), VCT) } returns accreditation(VeranaAccreditationStatus.REFUSED)
 
-        assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
-        coVerify { repository.fetchAuthorization(VeranaTrustRole.VERIFIER, DID, SCHEMA_A) }
+        val evidence = useCase(VeranaTrustRole.VERIFIER, DID, VCT, KEY)
+
+        assertTrue(evidence.blocksAccept)
+        assertFalse(evidence.canRetry)
     }
 
     @Test
-    fun `one unauthorized schema makes the result trusted but not authorized`() = runTest {
-        coEvery {
-            repository.fetchAuthorization(VeranaTrustRole.VERIFIER, DID, SCHEMA_B)
-        } returns VeranaResolverResult.Success(authorization(SCHEMA_B, authorized = false))
+    fun `undetermined accreditation keeps the gate closed with a retry`() = runTest {
+        coEvery { checkAccreditation(DID, any(), VCT) } returns accreditation(VeranaAccreditationStatus.UNDETERMINED)
 
-        val result = useCase(
-            role = VeranaTrustRole.VERIFIER,
-            did = DID,
-            vcSchemaIds = setOf(SCHEMA_A, SCHEMA_B),
-            vtjscIds = setOf(SCHEMA_A, SCHEMA_B),
-        )
+        val evidence = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-        assertEquals(VeranaTrustVerdict.TRUSTED_NOT_AUTHORIZED, result.verdict)
-        assertEquals(listOf(true, false), result.authorizations.map { it.authorized })
+        assertTrue(evidence.blocksAccept)
+        assertTrue(evidence.canRetry)
     }
 
     @Test
-    fun `Q1 not found is unverified and skips authorization`() = runTest {
-        coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.NotFound
+    fun `unverified and untrusted counterparties keep the gate closed even when granted`() = runTest {
+        coEvery { resolveVeranaTrust(DID) } returns resolution(VeranaTrustStatus.UNVERIFIED)
+        val unverified = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
+        coEvery { resolveVeranaTrust(DID) } returns resolution(VeranaTrustStatus.UNTRUSTED)
+        val untrusted = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-        assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
-        assertTrue(result.authorizations.isEmpty())
-        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
+        assertTrue(unverified.blocksAccept)
+        assertTrue(unverified.canRetry)
+        assertTrue(untrusted.blocksAccept)
+        assertFalse(untrusted.canRetry)
     }
 
     @Test
-    fun `Q1 unavailable is unavailable and skips authorization`() = runTest {
-        coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.Unavailable
+    fun `a certificate key the DID does not list makes the counterparty untrusted`() = runTest {
+        coEvery { verifyBinding(DID, VeranaTrustRole.VERIFIER, KEY) } returns VeranaDidKeyBinding.NOT_PROVEN
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
+        val evidence = useCase(VeranaTrustRole.VERIFIER, DID, VCT, KEY)
 
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
+        assertEquals(VeranaTrustStatus.UNTRUSTED, evidence.resolution.status)
+        assertEquals(VeranaUntrustedReason.DID_NOT_PROVEN, evidence.resolution.reason)
+        assertNull(evidence.accreditation)
+        assertTrue(evidence.blocksAccept)
+        coVerify(exactly = 0) { resolveVeranaTrust(any()) }
+        coVerify(exactly = 0) { checkAccreditation(any(), any(), any()) }
     }
 
     @Test
-    fun `Q1 partial or untrusted is untrusted`() = runTest {
-        val summaries = listOf(
-            trustedSummary().copy(trustStatus = "PARTIAL"),
-            trustedSummary().copy(trustStatus = "UNTRUSTED"),
-        )
+    fun `an unreachable DID document leaves the counterparty unverified`() = runTest {
+        coEvery { verifyBinding(DID, VeranaTrustRole.ISSUER, KEY) } returns VeranaDidKeyBinding.UNAVAILABLE
 
-        summaries.forEach { summary ->
-            coEvery { repository.fetchSummary(DID) } returns VeranaResolverResult.Success(summary)
+        val evidence = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-            val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-            assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
-        }
-        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
+        assertEquals(VeranaTrustStatus.UNVERIFIED, evidence.resolution.status)
+        assertTrue(evidence.blocksAccept)
+        assertTrue(evidence.canRetry)
     }
 
     @Test
-    fun `resolver production flag does not gate trust`() = runTest {
-        coEvery {
-            repository.fetchSummary(DID)
-        } returns VeranaResolverResult.Success(trustedSummary().copy(production = false))
+    fun `a DID authenticated without a certificate skips the key binding`() = runTest {
+        useCase(VeranaTrustRole.VERIFIER, DID, VCT, certificateKey = null)
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-        assertEquals(VeranaTrustVerdict.TRUSTED_AUTHORIZED, result.verdict)
-        coVerify { repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A) }
+        coVerify(exactly = 0) { verifyBinding(any(), any(), any()) }
+        coVerify { resolveVeranaTrust(DID) }
     }
 
     @Test
-    fun `Q1 exact DID mismatch is untrusted`() = runTest {
-        coEvery {
-            repository.fetchSummary(DID)
-        } returns VeranaResolverResult.Success(trustedSummary().copy(did = OTHER_DID))
+    fun `an unexpected failure is unverified, never trusted`() = runTest {
+        coEvery { resolveVeranaTrust(DID) } throws IllegalStateException("boom")
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
+        val evidence = useCase(VeranaTrustRole.ISSUER, DID, VCT, KEY)
 
-        assertEquals(VeranaTrustVerdict.UNTRUSTED, result.verdict)
-        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
+        assertEquals(VeranaTrustStatus.UNVERIFIED, evidence.resolution.status)
+        assertTrue(evidence.blocksAccept)
     }
 
     @Test
-    fun `authorization unavailable makes the whole result unavailable`() = runTest {
-        coEvery {
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_B)
-        } returns VeranaResolverResult.Unavailable
+    fun `no evidence means a counterparty without a DID, which keeps the normal flow`() {
+        val missing: VeranaTrustEvidence? = null
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A, SCHEMA_B), setOf(SCHEMA_A, SCHEMA_B))
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
+        assertFalse(missing.blocksAccept)
     }
 
-    @Test
-    fun `authorization not found makes the whole result unavailable`() = runTest {
-        coEvery {
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
-        } returns VeranaResolverResult.NotFound
+    private fun resolution(status: VeranaTrustStatus) = VeranaTrustResolution(did = DID, status = status)
 
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-    }
-
-    @Test
-    fun `authorization exact DID mismatch makes the whole result unavailable`() = runTest {
-        coEvery {
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
-        } returns VeranaResolverResult.Success(authorization(SCHEMA_A, did = OTHER_DID))
-
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-    }
-
-    @Test
-    fun `authorization exact schema mismatch makes the whole result unavailable`() = runTest {
-        coEvery {
-            repository.fetchAuthorization(VeranaTrustRole.ISSUER, DID, SCHEMA_A)
-        } returns VeranaResolverResult.Success(authorization(SCHEMA_B))
-
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-    }
-
-    @Test
-    fun `blank DID or schema is unverified without resolver access`() = runTest {
-        val blankDid = useCase(VeranaTrustRole.ISSUER, " ", setOf(SCHEMA_A), setOf(SCHEMA_A))
-        val blankSchema = useCase(VeranaTrustRole.ISSUER, DID, setOf(" "), setOf(" "))
-        val missingSchema = useCase(VeranaTrustRole.ISSUER, DID, emptySet(), emptySet())
-
-        assertEquals(VeranaTrustVerdict.UNVERIFIED, blankDid.verdict)
-        assertEquals(VeranaTrustVerdict.UNVERIFIED, blankSchema.verdict)
-        assertEquals(VeranaTrustVerdict.UNVERIFIED, missingSchema.verdict)
-        confirmVerified(repository)
-    }
-
-    @Test
-    fun `non DID issuer is unverified without resolver access`() = runTest {
-        val result = useCase(
-            role = VeranaTrustRole.ISSUER,
-            did = "https://issuer.example",
-            vcSchemaIds = setOf(SCHEMA_A),
-            vtjscIds = setOf(SCHEMA_A),
-        )
-
-        assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
-        confirmVerified(repository)
-    }
-
-    @Test
-    fun `malformed DIDs are unverified without resolver access`() = runTest {
-        val malformedDids = listOf(
-            "did:",
-            "did:method",
-            "did:METHOD:identifier",
-            "did:method:",
-            "did:method:identifier with whitespace",
-            "did:method:identifier%2",
-        )
-
-        malformedDids.forEach { malformedDid ->
-            val result = useCase(
-                role = VeranaTrustRole.ISSUER,
-                did = malformedDid,
-                vcSchemaIds = setOf(SCHEMA_A),
-                vtjscIds = setOf(SCHEMA_A),
-            )
-
-            assertEquals(VeranaTrustVerdict.UNVERIFIED, result.verdict)
-        }
-        confirmVerified(repository)
-    }
-
-    @Test
-    fun `trusted DID without a resolvable vtjscId is unavailable, never refused`() = runTest {
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), emptySet())
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-        assertTrue(result.authorizations.isEmpty())
-        coVerify(exactly = 0) { repository.fetchAuthorization(any(), any(), any()) }
-    }
-
-    @Test
-    fun `the complete evaluation is bounded by ten seconds`() = runTest {
-        coEvery { repository.fetchSummary(DID) } coAnswers {
-            delay(Long.MAX_VALUE)
-            VeranaResolverResult.Success(trustedSummary())
-        }
-
-        val result = useCase(VeranaTrustRole.ISSUER, DID, setOf(SCHEMA_A), setOf(SCHEMA_A))
-
-        assertEquals(VeranaTrustVerdict.RESOLVER_UNAVAILABLE, result.verdict)
-    }
-
-    private fun trustedSummary() = VeranaTrustSummary(
-        did = DID,
-        trustStatus = "TRUSTED",
-        production = true,
-        evaluatedAt = "2026-07-18T12:00:00.000Z",
-        evaluatedAtBlock = 1_500_000,
-        expiresAt = "2026-07-19T12:00:00.000Z",
-    )
-
-    private fun authorization(
-        schemaId: String,
-        authorized: Boolean = true,
-        did: String = DID,
-    ) = VeranaAuthorizationEvidence(
-        did = did,
-        vcSchemaId = schemaId,
-        authorized = authorized,
-        evaluatedAt = "2026-07-18T12:00:01.000Z",
-        evaluatedAtBlock = 1_500_001,
+    private fun accreditation(status: VeranaAccreditationStatus) = VeranaAccreditation(
+        status = status,
+        reason = VeranaAccreditationReason.ACTIVE_PARTICIPANT,
     )
 
     private companion object {
-        const val DID = "did:web:trusted.example"
-        const val OTHER_DID = "did:web:other.example"
-        const val SCHEMA_A = "https://schemas.example/a"
-        const val SCHEMA_B = "https://schemas.example/b"
-        const val RESOLVER_URL = "https://resolver.testnet.verana.network"
+        const val DID = "did:webvh:QmService:service.example"
+        const val VCT = "https://ecosystem.example/vt/vct/8"
+        val KEY = Jwk(x = "x", y = "y", crv = "P-256", kty = "EC")
     }
 }
