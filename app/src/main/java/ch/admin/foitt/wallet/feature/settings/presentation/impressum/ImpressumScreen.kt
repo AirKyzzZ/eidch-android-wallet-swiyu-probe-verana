@@ -27,6 +27,7 @@ import ch.admin.foitt.wallet.platform.composables.presentation.addTopScaffoldPad
 import ch.admin.foitt.wallet.platform.composables.presentation.bottomSafeDrawing
 import ch.admin.foitt.wallet.platform.composables.presentation.horizontalSafeDrawing
 import ch.admin.foitt.wallet.platform.preview.WalletAllScreenPreview
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VERANA_NETWORKS
 import ch.admin.foitt.wallet.theme.Sizes
 import ch.admin.foitt.wallet.theme.WalletListItems
 import ch.admin.foitt.wallet.theme.WalletTheme
@@ -72,6 +73,8 @@ private fun ImpressumScreenContent(
         LegalSection(
             onLegals = onLegals,
         )
+        Spacer(modifier = Modifier.height(Sizes.s06))
+        VeranaNetworksSection()
     }
 }
 
@@ -136,6 +139,19 @@ private fun LegalSection(
         title = stringResource(R.string.tk_settings_imprint_legal_disclaimer_primary),
         subtitle = stringResource(R.string.tk_settings_imprint_legal_disclaimer_secondary)
     )
+}
+
+@Composable
+private fun VeranaNetworksSection() = SettingsSection(
+    title = stringResource(R.string.verana_networks_section_title),
+) {
+    VERANA_NETWORKS.forEachIndexed { index, network ->
+        if (index > 0) WalletListItems.Divider()
+        WalletListItems.TextSettingsItem(
+            title = network.name,
+            subtitle = network.indexerUrl,
+        )
+    }
 }
 
 @WalletAllScreenPreview
