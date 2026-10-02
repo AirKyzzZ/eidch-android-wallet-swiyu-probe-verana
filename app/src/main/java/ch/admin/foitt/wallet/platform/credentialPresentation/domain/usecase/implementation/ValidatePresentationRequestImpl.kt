@@ -3,7 +3,6 @@ package ch.admin.foitt.wallet.platform.credentialPresentation.domain.usecase.imp
 import ch.admin.foitt.openid4vc.domain.model.SigningAlgorithm
 import ch.admin.foitt.openid4vc.domain.model.anycredential.Validity
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.CredentialFormat
-import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
 import ch.admin.foitt.openid4vc.domain.model.jwt.Jwt
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientIdentifier
@@ -15,6 +14,7 @@ import ch.admin.foitt.openid4vc.domain.model.x509.dnsSubjectAlternativeNames
 import ch.admin.foitt.openid4vc.domain.model.x509.toP256Jwk
 import ch.admin.foitt.openid4vc.domain.model.x509.x5cLeafCertificate
 import ch.admin.foitt.openid4vc.domain.usecase.VerifyRequestObjectSignature
+import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.AuthenticatedVerifier
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.CredentialPresentationError
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.PresentationRequestWithRaw
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.ValidatePresentationRequestError
@@ -218,11 +218,6 @@ class ValidatePresentationRequestImpl @Inject constructor(
             AuthenticatedVerifier(did = did, certificateKey = leafCertificate.toP256Jwk())
         }
     }.getOrNull()
-
-    private data class AuthenticatedVerifier(
-        val did: String,
-        val certificateKey: Jwk?,
-    )
 
     @Suppress("CyclomaticComplexMethod")
     private fun validateAuthorizationRequest(

@@ -5,6 +5,7 @@ import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditati
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationReason
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaAccreditationStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaNetwork
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaSchemaRef
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustRole
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaTrustStatus
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.repository.VeranaDocumentRepository
@@ -78,7 +79,7 @@ class CheckVeranaAccreditationImpl(
             return refused(VeranaAccreditationReason.SCHEMA_CREDENTIAL_INVALID, credentialName)
         }
 
-        val schemaRef = parseSchemaRef(vtjsc.jsonSchemaRef())
+        val schemaRef = VeranaSchemaRef.parse(vtjsc.jsonSchemaRef(), networks)
             ?: return refused(VeranaAccreditationReason.UNKNOWN_NETWORK, credentialName)
         return checkParticipant(
             did = did,
@@ -93,7 +94,7 @@ class CheckVeranaAccreditationImpl(
     private suspend fun checkParticipant(
         did: String,
         role: VeranaTrustRole,
-        schemaRef: SchemaRef,
+        schemaRef: VeranaSchemaRef,
         vtjscIssuer: String,
         credentialName: String?,
     ): VeranaAccreditation? {
@@ -123,13 +124,7 @@ class CheckVeranaAccreditationImpl(
         )
     }
 
-    fun parseSchemaRef(ref: String?): SchemaRef? {
-        val match = ref?.let(SCHEMA_REF::matchEntire) ?: return null
-        val network = networks.firstOrNull { it.id == match.groupValues[1] } ?: return null
-        return SchemaRef(network = network, schemaId = match.groupValues[2])
-    }
-
-    private suspend fun schemaEcosystemDid(schemaRef: SchemaRef): String? {
+    private suspend fun schemaEcosystemDid(schemaRef: VeranaSchemaRef): String? {
         val ecosystemId = indexerRepository.fetchSchemaEcosystemId(schemaRef.network, schemaRef.schemaId) ?: return null
         return indexerRepository.fetchEcosystemDid(schemaRef.network, ecosystemId)
     }
@@ -162,13 +157,7 @@ class CheckVeranaAccreditationImpl(
         uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
     }.getOrDefault(false)
 
-    data class SchemaRef(
-        val network: VeranaNetwork,
-        val schemaId: String,
-    )
-
     private companion object {
         const val SERVICE_CREDENTIAL = "ServiceCredential"
-        val SCHEMA_REF = Regex("""^vpr:verana:([^:]+):cs:(\d+)$""")
     }
 }

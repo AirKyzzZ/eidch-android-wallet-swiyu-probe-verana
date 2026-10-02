@@ -13,18 +13,20 @@ class VeranaDocumentRepositoryImpl @Inject constructor(
     private val safeJson: SafeJson,
 ) : VeranaDocumentRepository {
     override suspend fun fetchJson(url: String): JsonElement? =
-        fetchOk(url)?.let { body -> safeJson.safeParseToJsonElement(body).get() }
+        fetchOk(url)?.let(::parse)
 
     override suspend fun fetchDidDocument(did: String): VeranaDidDocument? {
         val url = VeranaDids.documentUrl(did) ?: return null
         val body = fetchOk(url) ?: return null
         val document = if (VeranaDids.isWebvh(did)) {
-            VeranaDids.lastLogState(body)
+            VeranaDids.lastLogEntry(body)?.let(::parse).let(VeranaDids::logEntryState)
         } else {
-            safeJson.safeParseToJsonElement(body).get()
+            parse(body)
         }
         return VeranaDids.parseDocument(did, document)
     }
+
+    private fun parse(body: String): JsonElement? = safeJson.safeParseToJsonElement(body).get()
 
     private suspend fun fetchOk(url: String): String? =
         httpClient.get(url)?.takeIf { it.status == HTTP_OK }?.body

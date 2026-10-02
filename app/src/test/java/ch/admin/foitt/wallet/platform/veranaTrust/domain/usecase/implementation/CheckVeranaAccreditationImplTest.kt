@@ -27,7 +27,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
@@ -164,15 +163,5 @@ class CheckVeranaAccreditationImplTest {
         coEvery { documents.fetchJson(VCT) } returns null
 
         assertEquals(VeranaAccreditationStatus.UNDETERMINED, useCase(ISSUER_DID, VeranaTrustRole.ISSUER, VCT).status)
-    }
-
-    @Test
-    fun `maps a schema reference onto a configured network only`() {
-        val schemaRef = requireNotNull(useCase.parseSchemaRef("vpr:verana:vna-devnet-1:cs:8"))
-
-        assertEquals(devnet, schemaRef.network)
-        assertEquals("8", schemaRef.schemaId)
-        assertNull(useCase.parseSchemaRef("vpr:verana:vna-mainnet-9:cs:8"))
-        assertNull(useCase.parseSchemaRef("vpr:verana:vna-testnet-1/cs/v1/js/253"))
     }
 }

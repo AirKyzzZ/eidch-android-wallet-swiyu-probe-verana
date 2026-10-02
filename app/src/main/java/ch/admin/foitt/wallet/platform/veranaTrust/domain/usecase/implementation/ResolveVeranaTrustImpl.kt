@@ -34,16 +34,16 @@ class ResolveVeranaTrustImpl(
         if (networks.isEmpty()) return unresolved(did, VeranaTrustStatus.UNVERIFIED)
 
         return coroutineScope {
-            val answers = Channel<NetworkAnswer>(capacity = networks.size)
+            val answers = Channel<VeranaTrustResolution?>(capacity = networks.size)
             val queries = networks.map { network ->
                 launch { answers.send(queryNetwork(network, did)) }
             }
-            val settled = mutableListOf<NetworkAnswer>()
+            val settled = mutableListOf<VeranaTrustResolution?>()
             repeat(networks.size) {
                 val answer = answers.receive()
-                if (answer is NetworkAnswer.Trusted) {
+                if (answer?.status == VeranaTrustStatus.TRUSTED) {
                     queries.forEach(Job::cancel)
-                    return@coroutineScope answer.resolution
+                    return@coroutineScope answer
                 }
                 settled += answer
             }
@@ -51,31 +51,27 @@ class ResolveVeranaTrustImpl(
         }
     }
 
-    private suspend fun queryNetwork(network: VeranaNetwork, did: String): NetworkAnswer =
+    private suspend fun queryNetwork(network: VeranaNetwork, did: String): VeranaTrustResolution? =
         when (val answer = indexerRepository.resolve(network, did)) {
-            VeranaIndexerAnswer.Unanswered -> NetworkAnswer.Unanswered
-            VeranaIndexerAnswer.NotRegistered -> NetworkAnswer.Untrusted(
+            VeranaIndexerAnswer.Unanswered -> null
+            VeranaIndexerAnswer.NotRegistered ->
                 unresolved(did, VeranaTrustStatus.UNTRUSTED, VeranaUntrustedReason.NOT_REGISTERED, network)
-            )
 
-            is VeranaIndexerAnswer.Resolved -> {
-                val resolution = answer.resolution
-                if (resolution.status != VeranaTrustStatus.TRUSTED) {
-                    NetworkAnswer.Untrusted(resolution)
-                } else {
-                    when (fromTrustedEcosystems(network, resolution.credentials)) {
-                        null -> NetworkAnswer.Unanswered
-                        true -> NetworkAnswer.Trusted(resolution)
-                        false -> NetworkAnswer.Untrusted(
-                            resolution.copy(
-                                status = VeranaTrustStatus.UNTRUSTED,
-                                reason = VeranaUntrustedReason.ECOSYSTEM_NOT_TRUSTED,
-                            )
-                        )
-                    }
-                }
-            }
+            is VeranaIndexerAnswer.Resolved -> answer.resolution.takeUnless { it.status == VeranaTrustStatus.TRUSTED }
+                ?: withTrustedEcosystems(network, answer.resolution)
         }
+
+    private suspend fun withTrustedEcosystems(
+        network: VeranaNetwork,
+        resolution: VeranaTrustResolution,
+    ): VeranaTrustResolution? = when (fromTrustedEcosystems(network, resolution.credentials)) {
+        null -> null
+        true -> resolution
+        false -> resolution.copy(
+            status = VeranaTrustStatus.UNTRUSTED,
+            reason = VeranaUntrustedReason.ECOSYSTEM_NOT_TRUSTED,
+        )
+    }
 
     private suspend fun fromTrustedEcosystems(
         network: VeranaNetwork,
@@ -91,19 +87,13 @@ class ResolveVeranaTrustImpl(
         return ecosystemDids.all { it in trustedDids }
     }
 
-    private fun settledVerdict(did: String, answers: List<NetworkAnswer>): VeranaTrustResolution {
-        if (answers.any { it is NetworkAnswer.Unanswered }) {
+    private fun settledVerdict(did: String, answers: List<VeranaTrustResolution?>): VeranaTrustResolution {
+        if (answers.any { it == null }) {
             return unresolved(did, VeranaTrustStatus.UNVERIFIED)
         }
-        val untrusted = answers.filterIsInstance<NetworkAnswer.Untrusted>().map { it.resolution }
+        val untrusted = answers.filterNotNull()
         return untrusted.firstOrNull { it.reason != VeranaUntrustedReason.NOT_REGISTERED }
             ?: untrusted.firstOrNull()
             ?: unresolved(did, VeranaTrustStatus.UNTRUSTED, VeranaUntrustedReason.NOT_REGISTERED)
-    }
-
-    private sealed interface NetworkAnswer {
-        data class Trusted(val resolution: VeranaTrustResolution) : NetworkAnswer
-        data class Untrusted(val resolution: VeranaTrustResolution) : NetworkAnswer
-        data object Unanswered : NetworkAnswer
     }
 }

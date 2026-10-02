@@ -2,6 +2,8 @@ package ch.admin.foitt.wallet.platform.veranaTrust.domain.util
 
 import ch.admin.foitt.wallet.platform.veranaTrust.VeranaDevnetFixtures
 import ch.admin.foitt.wallet.platform.veranaTrust.VeranaDevnetFixtures.VERIFIER_DID
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VERANA_NETWORKS
+import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaSchemaRef
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -44,7 +46,19 @@ class VeranaDidsTest {
         val first = JsonObject(mapOf("id" to JsonPrimitive("old")))
         val log = VeranaDevnetFixtures.didLog(first) + VeranaDevnetFixtures.didLog(VeranaDevnetFixtures.verifierDidDocumentJson)
 
-        assertEquals(VeranaDevnetFixtures.verifierDidDocumentJson, VeranaDids.lastLogState(log))
+        val lastEntry = Json.parseToJsonElement(requireNotNull(VeranaDids.lastLogEntry(log)))
+
+        assertEquals(VeranaDevnetFixtures.verifierDidDocumentJson, VeranaDids.logEntryState(lastEntry))
+    }
+
+    @Test
+    fun `schema references map onto a configured network only`() {
+        val schemaRef = requireNotNull(VeranaSchemaRef.parse("vpr:verana:vna-devnet-1:cs:8", VERANA_NETWORKS))
+
+        assertEquals(VERANA_NETWORKS.first(), schemaRef.network)
+        assertEquals("8", schemaRef.schemaId)
+        assertNull(VeranaSchemaRef.parse("vpr:verana:vna-mainnet-9:cs:8", VERANA_NETWORKS))
+        assertNull(VeranaSchemaRef.parse("vpr:verana:vna-testnet-1/cs/v1/js/253", VERANA_NETWORKS))
     }
 
     @Test

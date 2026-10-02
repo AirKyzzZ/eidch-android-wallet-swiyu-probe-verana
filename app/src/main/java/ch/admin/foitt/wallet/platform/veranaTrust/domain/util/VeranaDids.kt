@@ -2,7 +2,6 @@ package ch.admin.foitt.wallet.platform.veranaTrust.domain.util
 
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaDidDocument
 import ch.admin.foitt.wallet.platform.veranaTrust.domain.model.VeranaVerificationMethod
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,10 +36,9 @@ object VeranaDids {
         segments.map { URLDecoder.decode(it, Charsets.UTF_8.name()) }
     }.getOrNull()
 
-    fun lastLogState(log: String): JsonElement? = log.lineSequence()
-        .lastOrNull { it.isNotBlank() }
-        ?.let { line -> runCatching { Json.parseToJsonElement(line) }.getOrNull() }
-        ?.let { entry -> (entry as? JsonObject)?.get("state") }
+    fun lastLogEntry(log: String): String? = log.lineSequence().lastOrNull { it.isNotBlank() }
+
+    fun logEntryState(entry: JsonElement?): JsonElement? = (entry as? JsonObject)?.get("state")
 
     fun parseDocument(did: String, element: JsonElement?): VeranaDidDocument? {
         val document = element as? JsonObject ?: return null
