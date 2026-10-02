@@ -14,6 +14,7 @@ import ch.admin.foitt.wallet.platform.credentialPresentation.domain.usecase.Vali
 import ch.admin.foitt.wallet.platform.credentialPresentation.mock.MockPresentationRequest
 import ch.admin.foitt.wallet.platform.credentialPresentation.mock.MockPresentationRequest.CLIENT_ID
 import ch.admin.foitt.wallet.platform.environmentSetup.domain.repository.EnvironmentSetupRepository
+import ch.admin.foitt.wallet.platform.veranaTrust.VeranaDevnetFixtures
 import ch.admin.foitt.wallet.util.SafeJsonTestInstance
 import ch.admin.foitt.wallet.util.assertErrorType
 import ch.admin.foitt.wallet.util.assertOk
@@ -24,12 +25,14 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.impl.annotations.SpyK
+import io.mockk.spyk
 import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -227,6 +230,32 @@ class ValidatePresentationRequestImplTest {
         assertNull(result.verifierAttestationTrusted)
         assertEquals("did:example:12345", result.authenticatedVerifierDid)
         assertEquals(mockPresentationJwt.rawJwt, result.rawPresentationRequest)
+    }
+
+    @Test
+    fun `X509_HASH_PATH carries the DID and key of the devnet verifier certificate`() = runTest {
+        val devnetJwt = spyk(Jwt(VeranaDevnetFixtures.verifierRequestObjectJwt))
+        every { devnetJwt.jwtValidity } returns Validity.Valid
+        coEvery { mockRequestObject.jwt } returns devnetJwt
+        coEvery { mockRequestObject.clientId } returns devnetJwt.payloadJson.getValue("client_id").jsonPrimitive.content
+        coEvery {
+            mockVerifyRequestObjectSignature(any(), any())
+        } returns Ok(RequestObjectVerificationOutcome.X509_HASH_PATH)
+
+        val result = useCase(VerificationProcessType.NETWORK, mockRequestObject).assertOk()
+
+        assertEquals(VeranaDevnetFixtures.VERIFIER_DID, result.authenticatedVerifierDid)
+        assertEquals("XseqqXCfHcU0I__t3nHMdQom_S27tmyBSn-QWYeDLSw", result.authenticatedVerifierCertificateKey?.x)
+        assertEquals("yCCR2YWswqN0wLxdb0SKNtNc4Fzjg_u-USo6ujPm83E", result.authenticatedVerifierCertificateKey?.y)
+    }
+
+    @Test
+    fun `DID_PATH verification carries no certificate key`() = runTest {
+        coEvery { mockVerifyRequestObjectSignature(any(), any()) } returns Ok(RequestObjectVerificationOutcome.DID_PATH)
+
+        val result = useCase(VerificationProcessType.NETWORK, mockRequestObject).assertOk()
+
+        assertNull(result.authenticatedVerifierCertificateKey)
     }
 
     @Test

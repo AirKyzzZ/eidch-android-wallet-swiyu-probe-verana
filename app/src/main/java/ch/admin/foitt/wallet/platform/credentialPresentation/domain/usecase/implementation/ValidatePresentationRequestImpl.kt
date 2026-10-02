@@ -3,6 +3,7 @@ package ch.admin.foitt.wallet.platform.credentialPresentation.domain.usecase.imp
 import ch.admin.foitt.openid4vc.domain.model.SigningAlgorithm
 import ch.admin.foitt.openid4vc.domain.model.anycredential.Validity
 import ch.admin.foitt.openid4vc.domain.model.credentialoffer.metadata.CredentialFormat
+import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
 import ch.admin.foitt.openid4vc.domain.model.jwt.Jwt
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.ClientIdentifier
@@ -11,6 +12,7 @@ import ch.admin.foitt.openid4vc.domain.model.presentationRequest.RequestObjectVe
 import ch.admin.foitt.openid4vc.domain.model.vcSdJwt.VcSdJwtError
 import ch.admin.foitt.openid4vc.domain.model.x509.didSubjectAlternativeName
 import ch.admin.foitt.openid4vc.domain.model.x509.dnsSubjectAlternativeNames
+import ch.admin.foitt.openid4vc.domain.model.x509.toP256Jwk
 import ch.admin.foitt.openid4vc.domain.model.x509.x5cLeafCertificate
 import ch.admin.foitt.openid4vc.domain.usecase.VerifyRequestObjectSignature
 import ch.admin.foitt.wallet.platform.credentialPresentation.domain.model.CredentialPresentationError
@@ -134,6 +136,14 @@ class ValidatePresentationRequestImpl @Inject constructor(
             .mapError(JsonParsingError::toValidatePresentationRequestError)
             .bind()
 
+        val authenticatedVerifier = getAuthenticatedVerifier(
+            verificationProcessType = verificationProcessType,
+            verificationOutcome = verificationOutcome,
+            clientIdentifier = clientIdentifier,
+            jwt = jwt,
+            responseUri = responseUri,
+        )
+
         PresentationRequestWithRaw(
             verificationProcessType = verificationProcessType,
             authorizationRequest = authorizationRequest,
@@ -145,13 +155,8 @@ class ValidatePresentationRequestImpl @Inject constructor(
                 RequestObjectVerificationOutcome.X509_HASH_PATH,
                 null -> null
             },
-            authenticatedVerifierDid = getAuthenticatedVerifierDid(
-                verificationProcessType = verificationProcessType,
-                verificationOutcome = verificationOutcome,
-                clientIdentifier = clientIdentifier,
-                jwt = jwt,
-                responseUri = responseUri,
-            ),
+            authenticatedVerifierDid = authenticatedVerifier?.did,
+            authenticatedVerifierCertificateKey = authenticatedVerifier?.certificateKey,
         )
     }
 
@@ -176,13 +181,13 @@ class ValidatePresentationRequestImpl @Inject constructor(
         Ok(null)
     }
 
-    private fun getAuthenticatedVerifierDid(
+    private fun getAuthenticatedVerifier(
         verificationProcessType: VerificationProcessType,
         verificationOutcome: RequestObjectVerificationOutcome?,
         clientIdentifier: ClientIdentifier?,
         jwt: Jwt,
         responseUri: String?,
-    ): String? {
+    ): AuthenticatedVerifier? {
         if (!environmentSetupRepository.verifyRequestObjectSignature ||
             verificationProcessType != VerificationProcessType.NETWORK
         ) {
@@ -192,9 +197,9 @@ class ValidatePresentationRequestImpl @Inject constructor(
         return when (verificationOutcome) {
             RequestObjectVerificationOutcome.DID_PATH -> clientIdentifier?.clientId?.takeIf { clientId ->
                 clientId.isNotBlank() && clientId.startsWith(DID_PREFIX)
-            }
+            }?.let { did -> AuthenticatedVerifier(did = did, certificateKey = null) }
 
-            RequestObjectVerificationOutcome.X509_HASH_PATH -> getCertificateVerifierDid(
+            RequestObjectVerificationOutcome.X509_HASH_PATH -> getCertificateVerifier(
                 jwt = jwt,
                 responseUri = responseUri,
             )
@@ -203,14 +208,21 @@ class ValidatePresentationRequestImpl @Inject constructor(
         }
     }
 
-    private fun getCertificateVerifierDid(jwt: Jwt, responseUri: String?): String? = runCatching {
+    private fun getCertificateVerifier(jwt: Jwt, responseUri: String?): AuthenticatedVerifier? = runCatching {
         val responseHost = checkNotNull(URI(responseUri).host)
         val leafCertificate = jwt.x5cLeafCertificate()
         check(leafCertificate.dnsSubjectAlternativeNames().any { it.equals(responseHost, ignoreCase = true) }) {
             "x5c leaf certificate does not name the response_uri host"
         }
-        leafCertificate.didSubjectAlternativeName()
+        leafCertificate.didSubjectAlternativeName()?.let { did ->
+            AuthenticatedVerifier(did = did, certificateKey = leafCertificate.toP256Jwk())
+        }
     }.getOrNull()
+
+    private data class AuthenticatedVerifier(
+        val did: String,
+        val certificateKey: Jwk?,
+    )
 
     @Suppress("CyclomaticComplexMethod")
     private fun validateAuthorizationRequest(

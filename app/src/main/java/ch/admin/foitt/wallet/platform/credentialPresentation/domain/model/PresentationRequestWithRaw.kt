@@ -1,6 +1,7 @@
 package ch.admin.foitt.wallet.platform.credentialPresentation.domain.model
 
 import ch.admin.foitt.openid4vc.domain.model.Invitation
+import ch.admin.foitt.openid4vc.domain.model.jwk.Jwk
 import ch.admin.foitt.openid4vc.domain.model.presentationRequest.AuthorizationRequest
 import kotlinx.serialization.Serializable
 
@@ -11,4 +12,5 @@ data class PresentationRequestWithRaw(
     val verificationProcessType: VerificationProcessType,
     val verifierAttestationTrusted: Boolean? = null,
     val authenticatedVerifierDid: String? = null,
+    val authenticatedVerifierCertificateKey: Jwk? = null,
 ) : Invitation
